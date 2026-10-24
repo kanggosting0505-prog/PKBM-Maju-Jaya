@@ -1,6 +1,6 @@
 // Service Worker PKBM Maju Jaya
 // Strategi: network-first (data Supabase selalu terbaru), fallback ke cache saat offline.
-const CACHE_NAME = 'pkbm-cache-v5';
+const CACHE_NAME = 'pkbm-cache-v6';
 const CORE = [
   '/',
   '/index.html',

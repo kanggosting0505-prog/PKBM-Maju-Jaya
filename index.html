@@ -19,6 +19,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="application-name" content="PKBM Maju Jaya">
   <meta name="format-detection" content="telephone=no">
+  <script src="/config.js"></script>
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -185,6 +186,14 @@
 <body class="bg-slate-50 text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
 
 <div id="pkbm-app-root">
+  <!-- Overlay sinkronisasi -->
+  <div id="sync-overlay" class="hidden fixed inset-0 z-[100001] bg-white/90 backdrop-blur-sm items-center justify-center p-6">
+    <div class="text-center">
+      <div class="w-12 h-12 mx-auto mb-3 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin"></div>
+      <p id="sync-overlay-text" class="text-sm font-semibold text-slate-700">Memuat data dari Supabase...</p>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toast-container" class="fixed right-4 md:right-5 z-[100000] flex flex-col gap-2 pointer-events-none" style="top: calc(env(safe-area-inset-top, 0px) + 1.25rem); max-width: calc(100% - 2rem);"></div>
 
@@ -560,6 +569,12 @@ function getInstitutionProfile() {
 
 function saveInstitutionProfileData(data) {
   localStorage.setItem(STORAGE_KEYS.INSTITUTION, JSON.stringify(data));
+  if (isCloudMode()) {
+    const cleaned = { ...data, logo_url: data.logo_url === DEFAULT_LOGO_URL ? '' : (data.logo_url || '') };
+    enqueueOp('app_settings', 'key', 'institution', 'upsert', { key: 'institution', value: cleaned });
+    updateSyncChip();
+    scheduleFlush();
+  }
 }
 
 // INITIAL SEED DATA
@@ -777,22 +792,37 @@ const INITIAL_DATA = {
 
 // STORAGE HELPERS
 function getDb() {
-  const raw = localStorage.getItem(STORAGE_KEYS.DATA);
+  const key = activeDataKey();
+  const raw = localStorage.getItem(key);
   if (!raw) {
-    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(INITIAL_DATA));
+    if (isCloudMode()) return emptyDb();
+    localStorage.setItem(key, JSON.stringify(INITIAL_DATA));
     return JSON.parse(JSON.stringify(INITIAL_DATA));
   }
   try {
     const data = JSON.parse(raw);
-    if (!data.penilaian) data.penilaian = INITIAL_DATA.penilaian;
+    if (isCloudMode()) {
+      const base = emptyDb();
+      Object.keys(base).forEach(k => { if (!Array.isArray(data[k])) data[k] = []; });
+    } else if (!data.penilaian) {
+      data.penilaian = INITIAL_DATA.penilaian;
+    }
     return data;
   } catch (e) {
-    return INITIAL_DATA;
+    return isCloudMode() ? emptyDb() : INITIAL_DATA;
   }
 }
 
 function saveDb(data) {
-  localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(data));
+  const key = activeDataKey();
+  if (!isCloudMode()) {
+    localStorage.setItem(key, JSON.stringify(data));
+    return;
+  }
+  let before = emptyDb();
+  try { before = { ...emptyDb(), ...(JSON.parse(localStorage.getItem(key) || 'null') || {}) }; } catch (e) {}
+  localStorage.setItem(key, JSON.stringify(data));
+  queueDiff(before, data);
 }
 
 function showToast(message, type = 'success') {
@@ -1051,6 +1081,29 @@ async function handleLoginSubmit(e) {
     }
   }
 
+  // 2-3. GURU / SISWA (mode cloud): kata sandi diperiksa di server, tidak pernah dikirim ke browser
+  if (isCloudMode() && (selectedLoginRole === 'guru' || selectedLoginRole === 'siswa')) {
+    const fn = selectedLoginRole === 'guru' ? 'login_guru' : 'login_siswa';
+    try {
+      const { data, error } = await supabaseClient.rpc(fn, { p_identifier: identifier, p_password: password });
+      if (error) throw error;
+      if (data && selectedLoginRole === 'guru') {
+        loginSuccess({ role: 'guru', id: data.id, nip_guru: data.nip_guru, name: data.nama_lengkap, mapel: data.mata_pelajaran, hp: data.no_hp });
+        return;
+      }
+      if (data && selectedLoginRole === 'siswa') {
+        loginSuccess({ role: 'siswa', id: data.id, nisn: data.nisn, name: data.nama_lengkap, paket: data.paket, tingkat: data.tingkat, alamat: data.alamat, hp: data.no_hp });
+        return;
+      }
+      showToast('Identitas atau kata sandi tidak cocok! Periksa kembali.', 'error');
+    } catch (err) {
+      showToast(classifyError(err) === 'schema'
+        ? 'Fungsi login belum dipasang di Supabase. Minta Admin menjalankan cloud-setup.sql.'
+        : (err.message || 'Login gagal, coba lagi.'), 'error');
+    }
+    return;
+  }
+
   // 2. GURU / TUTOR LOGIN
   if (selectedLoginRole === 'guru') {
     const guru = db.guru.find(g => (g.nip_guru.toLowerCase() === identifier.toLowerCase() || g.id === identifier || g.nama_lengkap.toLowerCase().includes(identifier.toLowerCase())) && g.password === password);
@@ -1088,11 +1141,13 @@ async function handleLoginSubmit(e) {
   showToast('Identitas atau kata sandi tidak cocok! Periksa kembali.', 'error');
 }
 
-function loginSuccess(userObj) {
+async function loginSuccess(userObj) {
   currentUser = userObj;
   localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(currentUser));
   document.getElementById('view-login').classList.add('hidden');
   document.getElementById('view-app').classList.remove('hidden');
+
+  if (isCloudMode()) await cloudPostLoginSetup();
 
   applyInstitutionBrand();
   updateUserBadge();
@@ -1105,12 +1160,24 @@ async function handleLogout() {
   const confirmed = await customConfirm('Apakah Anda yakin ingin keluar dari sistem PKBM?', 'Keluar Akun');
   if (!confirmed) return;
 
+  if (isCloudMode()) {
+    showSyncOverlay(true, 'Menyimpan perubahan terakhir...');
+    try { await flushOutbox(); } finally { showSyncOverlay(false); }
+    const n = pendingCount();
+    if (n > 0) {
+      const go = await customConfirm(`Masih ada ${n} perubahan yang belum terkirim ke Supabase (mungkin sedang offline). Jika keluar sekarang, perubahan itu akan hilang. Tetap keluar?`, 'Perubahan Belum Tersimpan');
+      if (!go) return;
+    }
+  }
+
   if (supabaseClient && currentUser?.role === 'admin') {
     try { await supabaseClient.auth.signOut(); } catch(e){}
   }
 
   currentUser = null;
   localStorage.removeItem(STORAGE_KEYS.SESSION);
+  localStorage.removeItem(CLOUD_CACHE_KEY);
+  localStorage.removeItem(OUTBOX_KEY);
   document.getElementById('view-app').classList.add('hidden');
   document.getElementById('view-login').classList.remove('hidden');
   showToast('Anda telah keluar dari aplikasi.', 'info');
@@ -1444,8 +1511,8 @@ function renderDashboardView() {
               <i data-lucide="wallet" class="w-4 h-4"></i>
             </div>
           </div>
-          <div class="text-lg font-black text-slate-800 truncate">${formatRupiah(saldoKas)}</div>
-          <p class="text-[11px] text-emerald-600 font-semibold mt-1">Saldo kas aktif</p>
+          <div class="text-lg font-black text-slate-800 truncate">${currentUser.role === 'admin' ? formatRupiah(saldoKas) : '-'}</div>
+          <p class="text-[11px] text-emerald-600 font-semibold mt-1">${currentUser.role === 'admin' ? 'Saldo kas aktif' : 'Khusus Admin'}</p>
         </div>
       </div>
 
@@ -2939,11 +3006,11 @@ function openModalEditRaport(raportId) {
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block font-semibold text-slate-700 mb-1">Nama Kepala PKBM</label>
-            <input type="text" id="edit-rap-kepala" value="${profile.nama_kepala || r.kepala_pkbm_nama || ''}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+            <input type="text" id="edit-rap-kepala" ${currentUser.role !== 'admin' ? 'readonly' : ''} value="${profile.nama_kepala || r.kepala_pkbm_nama || ''}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
           </div>
           <div>
             <label class="block font-semibold text-slate-700 mb-1">NIP Kepala PKBM (Isi '-' jika non-NIP)</label>
-            <input type="text" id="edit-rap-nip-kepala" value="${profile.nip_kepala || r.kepala_pkbm_nip || '-'}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white">
+            <input type="text" id="edit-rap-nip-kepala" ${currentUser.role !== 'admin' ? 'readonly' : ''} value="${profile.nip_kepala || r.kepala_pkbm_nip || '-'}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white">
           </div>
         </div>
 
@@ -3065,7 +3132,9 @@ function saveRaportValues(e, raportId) {
   r.kepala_pkbm_nip = document.getElementById('edit-rap-nip-kepala').value.trim() || '-';
   // Simpan juga ke Identitas Lembaga agar semua raport & cetak ikut berubah
   const _prof = getInstitutionProfile();
-  saveInstitutionProfileData({ ..._prof, nama_kepala: r.kepala_pkbm_nama || _prof.nama_kepala, nip_kepala: r.kepala_pkbm_nip });
+  if (currentUser && currentUser.role === 'admin') {
+    saveInstitutionProfileData({ ..._prof, nama_kepala: r.kepala_pkbm_nama || _prof.nama_kepala, nip_kepala: r.kepala_pkbm_nip });
+  }
   r.kota_terbit = document.getElementById('edit-rap-kota').value.trim();
   r.tanggal_terbit = document.getElementById('edit-rap-tgl').value.trim();
 
@@ -3785,54 +3854,523 @@ function saveSupabaseConfig() {
   SUPABASE_ANON_KEY = key;
   IS_PREVIEW = false;
 
-  initSupabaseClient();
   closeConfigModal();
-  showToast('Konfigurasi Supabase disimpan! Menghubungkan...', 'success');
+  showToast('Konfigurasi disimpan. Memuat ulang, silakan login dengan akun Supabase.', 'success');
+  localStorage.removeItem(STORAGE_KEYS.SESSION);
+  setTimeout(() => location.reload(), 900);
 }
 
 async function initSupabaseClient() {
-  const savedCfg = localStorage.getItem(STORAGE_KEYS.CONFIG);
-  if (savedCfg) {
-    try {
-      const parsed = JSON.parse(savedCfg);
-      if (parsed.url && parsed.key) {
-        SUPABASE_URL = parsed.url;
-        SUPABASE_ANON_KEY = parsed.key;
-        IS_PREVIEW = false;
-      }
-    } catch(e){}
+  // Prioritas: /config.js (sama di semua perangkat), lalu pengaturan manual di perangkat ini
+  const fileCfg = window.PKBM_CONFIG || {};
+  if (fileCfg.SUPABASE_URL && fileCfg.SUPABASE_ANON_KEY) {
+    SUPABASE_URL = fileCfg.SUPABASE_URL;
+    SUPABASE_ANON_KEY = fileCfg.SUPABASE_ANON_KEY;
+    IS_PREVIEW = false;
+  } else {
+    const savedCfg = localStorage.getItem(STORAGE_KEYS.CONFIG);
+    if (savedCfg) {
+      try {
+        const parsed = JSON.parse(savedCfg);
+        if (parsed.url && parsed.key) {
+          SUPABASE_URL = parsed.url;
+          SUPABASE_ANON_KEY = parsed.key;
+          IS_PREVIEW = false;
+        }
+      } catch(e){}
+    }
   }
 
   if (!IS_PREVIEW && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
     try {
       supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      document.getElementById('sync-text').textContent = 'Cloud Terhubung';
-      document.getElementById('status-chip').className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200";
-      await autoSetupDatabase();
     } catch (err) {
       console.warn('Gagal menghubungkan Supabase:', err);
     }
-  } else {
-    document.getElementById('sync-text').textContent = 'Mode Demo';
+  }
+  updateSyncChip();
+}
+
+// ==============================================================================
+// LAPISAN SINKRONISASI SUPABASE (Supabase = sumber data utama, localStorage = cache)
+// ==============================================================================
+const CLOUD_CACHE_KEY = 'pkbm_cloud_cache_v1';
+const OUTBOX_KEY = 'pkbm_outbox_v1';
+
+const SYNC_TABLES = [
+  { key: 'guru', table: 'tutor_guru', secret: ['password'],
+    cols: ['id', 'nip_guru', 'nama_lengkap', 'mata_pelajaran', 'no_hp', 'password'] },
+  { key: 'warga_belajar', table: 'warga_belajar', secret: ['password'],
+    cols: ['id', 'nisn', 'nama_lengkap', 'paket', 'tingkat', 'jenis_kelamin', 'no_hp', 'alamat', 'status', 'password'] },
+  { key: 'jadwal_modul', table: 'jadwal_modul',
+    cols: ['id', 'paket', 'mata_pelajaran', 'tutor_nama', 'hari_waktu', 'link_modul', 'keterangan'] },
+  { key: 'presensi', table: 'presensi',
+    cols: ['id', 'warga_belajar_id', 'tanggal', 'paket', 'status_kehadiran', 'keterangan'] },
+  { key: 'penilaian', table: 'penilaian', num: ['nilai'],
+    cols: ['id', 'warga_belajar_id', 'paket', 'mapel', 'jenis', 'nilai', 'catatan'] },
+  { key: 'administrasi_kas', table: 'administrasi_kas', num: ['jumlah'], newestFirst: true,
+    cols: ['id', 'tanggal', 'kategori', 'tipe', 'jumlah', 'keterangan'] },
+  { key: 'raport', table: 'raport',
+    cols: ['id', 'warga_belajar_id', 'wali_kelas_nama', 'wali_kelas_nip', 'kepala_pkbm_nama', 'kepala_pkbm_nip',
+           'kota_terbit', 'tanggal_terbit', 'tahun_ajaran', 'semester', 'catatan_wali', 'predikat_sikap',
+           'status_kenaikan', 'nilai_mapel'] }
+];
+
+let cloudHealth = { ok: null, message: '', offline: false };
+let cloudInitialized = false;
+let lastSyncAt = 0;
+let syncing = false;
+let flushing = false;
+let flushAgain = false;
+let flushTimer = null;
+let initPromptShown = false;
+
+function emptyDb() {
+  const d = {};
+  SYNC_TABLES.forEach(t => { d[t.key] = []; });
+  return d;
+}
+
+function isCloudMode() {
+  return !IS_PREVIEW && !!supabaseClient;
+}
+
+function activeDataKey() {
+  return isCloudMode() ? CLOUD_CACHE_KEY : STORAGE_KEYS.DATA;
+}
+
+// ---------- Outbox (antrian perubahan yang belum terkirim, tahan refresh/offline) ----------
+function getOutbox() {
+  try { return JSON.parse(localStorage.getItem(OUTBOX_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function setOutbox(o) {
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(o));
+}
+let opSeq = Date.now();
+function enqueueOp(table, pk, id, op, row) {
+  const ob = getOutbox();
+  ob[table + '|' + id] = { table, pk, id, op, row: row || null, seq: ++opSeq };
+  setOutbox(ob);
+}
+function pendingCount() {
+  return Object.keys(getOutbox()).length;
+}
+
+function sanitizeRow(def, row) {
+  const out = {};
+  def.cols.forEach(c => {
+    let v = row[c];
+    if (v === undefined) v = null;
+    if (def.num && def.num.includes(c)) v = (v === null || v === '') ? null : Number(v);
+    out[c] = v;
+  });
+  return out;
+}
+
+function queueDiff(before, after) {
+  SYNC_TABLES.forEach(def => {
+    const prev = new Map();
+    (before[def.key] || []).forEach(r => { if (r && r.id) prev.set(r.id, JSON.stringify(sanitizeRow(def, r))); });
+    const seen = new Set();
+    (after[def.key] || []).forEach(r => {
+      if (!r || !r.id) return;
+      seen.add(r.id);
+      const clean = sanitizeRow(def, r);
+      if (prev.get(r.id) !== JSON.stringify(clean)) enqueueOp(def.table, 'id', r.id, 'upsert', clean);
+    });
+    prev.forEach((_, id) => { if (!seen.has(id)) enqueueOp(def.table, 'id', id, 'delete'); });
+  });
+  updateSyncChip();
+  scheduleFlush();
+}
+
+function scheduleFlush(ms) {
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(() => { flushOutbox(); }, ms == null ? 400 : ms);
+}
+
+function classifyError(err) {
+  const msg = String((err && (err.message || err.details)) || err || '');
+  const code = err && err.code;
+  const status = err && err.status;
+  if (code === '42501' || status === 401 || status === 403 || /row-level security|permission denied|not authorized/i.test(msg)) return 'permission';
+  if (code === 'PGRST202' || code === 'PGRST204' || code === 'PGRST205' || code === '42703' || code === '42P01' ||
+      /schema cache|does not exist|could not find/i.test(msg)) return 'schema';
+  if (/failed to fetch|networkerror|network request failed|load failed|fetch failed/i.test(msg) || status === 0) return 'network';
+  return 'other';
+}
+
+function applyOutbox(db) {
+  const ob = getOutbox();
+  Object.values(ob).forEach(e => {
+    const def = SYNC_TABLES.find(t => t.table === e.table);
+    if (!def) return;
+    const list = db[def.key] || (db[def.key] = []);
+    const idx = list.findIndex(r => r.id === e.id);
+    if (e.op === 'delete') {
+      if (idx !== -1) list.splice(idx, 1);
+    } else if (e.op === 'upsert' && e.row) {
+      if (idx !== -1) list[idx] = { ...list[idx], ...e.row };
+      else if (def.newestFirst) list.unshift({ ...e.row });
+      else list.push({ ...e.row });
+    }
+  });
+}
+
+function removeFromOutbox(chunk) {
+  const ob = getOutbox();
+  chunk.forEach(([k, e]) => { if (ob[k] && ob[k].seq === e.seq) delete ob[k]; });
+  setOutbox(ob);
+}
+
+// ---------- Kirim perubahan ke Supabase ----------
+async function flushOutbox() {
+  if (!isCloudMode()) return;
+  if (flushing) { flushAgain = true; return; }
+  flushing = true;
+  updateSyncChip();
+  let revert = false;
+  let deniedTables = new Set();
+  try {
+    outer:
+    do {
+      flushAgain = false;
+      const entries = Object.entries(getOutbox());
+      if (!entries.length) break;
+
+      const groups = {};
+      entries.forEach(([k, e]) => { (groups[e.table + '|' + e.op] = groups[e.table + '|' + e.op] || []).push([k, e]); });
+
+      for (const g of Object.keys(groups)) {
+        const list = groups[g];
+        const { table, op, pk } = list[0][1];
+        for (let i = 0; i < list.length; i += 100) {
+          const chunk = list.slice(i, i + 100);
+          let res;
+          try {
+            if (op === 'upsert') {
+              res = await supabaseClient.from(table).upsert(chunk.map(([, e]) => e.row), { onConflict: pk });
+            } else {
+              res = await supabaseClient.from(table).delete().in(pk, chunk.map(([, e]) => e.id));
+            }
+          } catch (ex) {
+            res = { error: ex };
+          }
+
+          if (!res.error) {
+            removeFromOutbox(chunk);
+            cloudHealth.offline = false;
+            continue;
+          }
+
+          const kind = classifyError(res.error);
+          if (kind === 'permission') {
+            removeFromOutbox(chunk);
+            revert = true;
+            deniedTables.add(table);
+          } else if (kind === 'network') {
+            cloudHealth.offline = true;
+            break outer;
+          } else if (kind === 'schema') {
+            cloudHealth = { ok: false, message: 'Struktur tabel di Supabase belum lengkap (' + table + '). Jalankan cloud-setup.sql.', offline: false };
+            break outer;
+          } else {
+            console.warn('Sync error', table, res.error);
+            cloudHealth = { ok: false, message: 'Gagal mengirim ke tabel ' + table + ': ' + (res.error.message || 'kesalahan tidak diketahui'), offline: false };
+            break outer;
+          }
+        }
+      }
+    } while (flushAgain);
+  } finally {
+    flushing = false;
+    updateSyncChip();
+  }
+
+  if (revert) {
+    showToast('Perubahan ditolak server: akun ini tidak punya izin mengubah ' + Array.from(deniedTables).join(', ') + '. Data dikembalikan.', 'warning');
+    await syncFromCloud();
+    if (!isUiBusy()) routeTo(currentTab);
   }
 }
 
-async function autoSetupDatabase() {
-  if (!supabaseClient) return;
-  try {
-    const { data, error } = await supabaseClient.from('warga_belajar').select('id').limit(1);
-    if (!error && (!data || data.length === 0)) {
-      const db = getDb();
-      await supabaseClient.from('tutor_guru').insert(db.guru);
-      await supabaseClient.from('warga_belajar').insert(db.warga_belajar);
-      await supabaseClient.from('jadwal_modul').insert(db.jadwal_modul);
-      await supabaseClient.from('penilaian').insert(db.penilaian);
-      await supabaseClient.from('administrasi_kas').insert(db.administrasi_kas);
-      showToast('Database Supabase kosong, inisialisasi awal selesai!', 'info');
-    }
-  } catch (err) {
-    console.error('autoSetupDatabase error:', err);
+// ---------- Tarik data dari Supabase ----------
+async function fetchAllRows(def, cols) {
+  const rows = [];
+  const size = 1000;
+  for (let from = 0; ; from += size) {
+    const { data, error } = await supabaseClient
+      .from(def.table)
+      .select(cols)
+      .order('created_at', { ascending: !def.newestFirst })
+      .order('id', { ascending: !def.newestFirst })
+      .range(from, from + size - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < size) break;
   }
+  return rows;
+}
+
+async function syncFromCloud() {
+  if (!isCloudMode()) return { ok: false, changed: false };
+  if (syncing) return { ok: cloudHealth.ok !== false, changed: false, busy: true };
+  syncing = true;
+  updateSyncChip();
+  try {
+    await flushOutbox();
+
+    let authed = false;
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      authed = !!(data && data.session);
+    } catch (e) {}
+
+    const prevRaw = localStorage.getItem(CLOUD_CACHE_KEY) || '';
+    let cached = emptyDb();
+    try { cached = { ...emptyDb(), ...(JSON.parse(prevRaw) || {}) }; } catch (e) {}
+
+    const db = emptyDb();
+    const errors = [];
+    for (const def of SYNC_TABLES) {
+      const cols = def.cols.filter(c => authed || !(def.secret || []).includes(c)).join(',');
+      try {
+        db[def.key] = await fetchAllRows(def, cols);
+      } catch (err) {
+        errors.push({ table: def.table, err });
+        db[def.key] = cached[def.key] || [];
+      }
+    }
+
+    let settings = null;
+    try {
+      const { data, error } = await supabaseClient.from('app_settings').select('key,value');
+      if (error) throw error;
+      settings = {};
+      (data || []).forEach(r => { settings[r.key] = r.value; });
+    } catch (err) {
+      errors.push({ table: 'app_settings', err });
+    }
+
+    applyOutbox(db);
+    const nextRaw = JSON.stringify(db);
+    const changed = nextRaw !== prevRaw;
+    localStorage.setItem(CLOUD_CACHE_KEY, nextRaw);
+
+    if (settings) {
+      cloudInitialized = settings.cloud_initialized === true;
+      if (settings.institution && typeof settings.institution === 'object' && !getOutbox()['app_settings|institution']) {
+        localStorage.setItem(STORAGE_KEYS.INSTITUTION, JSON.stringify(settings.institution));
+        try { applyInstitutionBrand(); } catch (e) {}
+      }
+    }
+
+    if (errors.length) {
+      const kinds = errors.map(e => classifyError(e.err));
+      const names = errors.map(e => e.table).join(', ');
+      if (kinds.includes('network')) {
+        cloudHealth = { ok: cloudHealth.ok, message: '', offline: true };
+      } else if (kinds.includes('schema')) {
+        cloudHealth = { ok: false, message: 'Tabel/kolom Supabase belum lengkap (' + names + ').', offline: false };
+      } else {
+        cloudHealth = { ok: false, message: 'Gagal membaca ' + names + ': ' + (errors[0].err.message || 'kesalahan tidak diketahui'), offline: false };
+      }
+    } else {
+      cloudHealth = { ok: true, message: '', offline: false };
+      lastSyncAt = Date.now();
+    }
+    return { ok: errors.length === 0, changed, errors };
+  } finally {
+    syncing = false;
+    updateSyncChip();
+  }
+}
+
+// ---------- Inisialisasi pertama: jadikan data perangkat ini sebagai data awal Supabase ----------
+async function initializeCloudFromLocal() {
+  if (!isCloudMode() || !currentUser || currentUser.role !== 'admin') return false;
+  let local = null;
+  try { local = JSON.parse(localStorage.getItem(STORAGE_KEYS.DATA) || 'null'); } catch (e) {}
+  if (!local) {
+    showToast('Tidak ada data lokal di perangkat ini untuk dikirim.', 'warning');
+    return false;
+  }
+
+  const counts = SYNC_TABLES.map(d => `${(local[d.key] || []).length} ${d.key.replace(/_/g, ' ')}`).join(', ');
+  const ok = await customConfirm(
+    `Data di perangkat ini (${counts}) akan dijadikan data resmi di Supabase. Data di Supabase yang tidak ada di perangkat ini akan DIHAPUS agar sama persis. Lanjutkan?`,
+    'Kirim Data ke Supabase'
+  );
+  if (!ok) return false;
+
+  showSyncOverlay(true, 'Mengirim data ke Supabase...');
+  try {
+    let cloud = emptyDb();
+    try { cloud = { ...emptyDb(), ...(JSON.parse(localStorage.getItem(CLOUD_CACHE_KEY) || 'null') || {}) }; } catch (e) {}
+
+    const next = emptyDb();
+    SYNC_TABLES.forEach(d => { next[d.key] = local[d.key] || []; });
+    localStorage.setItem(CLOUD_CACHE_KEY, JSON.stringify(next));
+    queueDiff(cloud, next);
+
+    saveInstitutionProfileData(getInstitutionProfile());
+    enqueueOp('app_settings', 'key', 'cloud_initialized', 'upsert', { key: 'cloud_initialized', value: true });
+
+    await flushOutbox();
+    const r = await syncFromCloud();
+    if (r.ok && pendingCount() === 0) {
+      showToast('Data berhasil dikirim ke Supabase. Mulai sekarang Supabase menjadi sumber data utama.', 'success');
+    } else {
+      showToast('Sebagian data belum terkirim. Periksa status di menu Pengaturan.', 'warning');
+    }
+    return true;
+  } finally {
+    showSyncOverlay(false);
+  }
+}
+
+async function cloudPostLoginSetup() {
+  if (!isCloudMode() || !currentUser) return;
+  showSyncOverlay(true, 'Memuat data dari Supabase...');
+  let r;
+  try {
+    r = await syncFromCloud();
+  } finally {
+    showSyncOverlay(false);
+  }
+
+  if (!r.ok && cloudHealth.ok === false) {
+    showToast(currentUser.role === 'admin'
+      ? 'Database Supabase belum siap. Buka menu Pengaturan lalu jalankan SQL setup.'
+      : 'Database belum siap. Hubungi Admin PKBM.', 'error');
+    return;
+  }
+
+  if (currentUser.role === 'admin' && r.ok && !cloudInitialized && !initPromptShown) {
+    initPromptShown = true;
+    if (localStorage.getItem(STORAGE_KEYS.DATA)) {
+      await initializeCloudFromLocal();
+    } else {
+      enqueueOp('app_settings', 'key', 'cloud_initialized', 'upsert', { key: 'cloud_initialized', value: true });
+      await flushOutbox();
+    }
+  }
+}
+
+// ---------- Indikator & overlay ----------
+function showSyncOverlay(show, text) {
+  const el = document.getElementById('sync-overlay');
+  if (!el) return;
+  if (text) {
+    const t = document.getElementById('sync-overlay-text');
+    if (t) t.textContent = text;
+  }
+  el.classList.toggle('hidden', !show);
+  el.classList.toggle('flex', !!show);
+}
+
+function updateSyncChip() {
+  const chip = document.getElementById('status-chip');
+  if (!chip) return;
+  let cls, dot, label;
+  if (!isCloudMode()) {
+    cls = 'bg-emerald-50 text-emerald-700 border-emerald-200'; dot = 'bg-emerald-500 animate-pulse'; label = 'Mode Demo';
+  } else if (syncing || flushing) {
+    cls = 'bg-amber-50 text-amber-700 border-amber-200'; dot = 'bg-amber-500 animate-pulse'; label = 'Menyinkronkan...';
+  } else if (cloudHealth.ok === false) {
+    cls = 'bg-rose-50 text-rose-700 border-rose-200'; dot = 'bg-rose-500'; label = 'Cloud bermasalah';
+  } else if (cloudHealth.offline) {
+    const n = pendingCount();
+    cls = 'bg-amber-50 text-amber-700 border-amber-200'; dot = 'bg-amber-500'; label = n ? `Offline • ${n} tertunda` : 'Offline';
+  } else if (pendingCount() > 0) {
+    cls = 'bg-amber-50 text-amber-700 border-amber-200'; dot = 'bg-amber-500 animate-pulse'; label = `${pendingCount()} tertunda`;
+  } else {
+    cls = 'bg-blue-50 text-blue-700 border-blue-200'; dot = 'bg-blue-500'; label = 'Tersinkron';
+  }
+  chip.className = `flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${cls}`;
+  chip.innerHTML = `<span class="w-2 h-2 rounded-full ${dot}"></span><span id="sync-text">${label}</span>`;
+}
+
+function isUiBusy() {
+  const ids = ['form-modal', 'confirm-modal', 'institution-modal', 'config-modal'];
+  const modalOpen = ids.some(id => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); });
+  const tag = ((document.activeElement && document.activeElement.tagName) || '').toUpperCase();
+  return modalOpen || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+async function autoRefreshFromCloud(force) {
+  if (!isCloudMode() || !currentUser || document.visibilityState !== 'visible') return;
+  if (flushing || syncing || pendingCount() > 0) return;
+  if (!force && Date.now() - lastSyncAt < 25000) return;
+  const r = await syncFromCloud();
+  if (r && r.changed && !isUiBusy()) routeTo(currentTab);
+}
+
+setInterval(() => {
+  if (isCloudMode() && currentUser && pendingCount() > 0 && !flushing) flushOutbox();
+}, 15000);
+setInterval(() => { autoRefreshFromCloud(false); }, 60000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') autoRefreshFromCloud(false);
+});
+window.addEventListener('online', () => { if (isCloudMode()) flushOutbox(); });
+
+// ---------- Panel sinkronisasi di menu Pengaturan ----------
+function renderSyncCard() {
+  const cloud = isCloudMode();
+  const pending = pendingCount();
+  let badge, text;
+  if (!cloud) { badge = 'bg-slate-100 text-slate-600'; text = 'Mode Demo (data hanya di perangkat ini)'; }
+  else if (cloudHealth.ok === false) { badge = 'bg-rose-100 text-rose-700'; text = 'Bermasalah'; }
+  else if (cloudHealth.offline) { badge = 'bg-amber-100 text-amber-700'; text = 'Offline'; }
+  else if (pending > 0) { badge = 'bg-amber-100 text-amber-700'; text = pending + ' perubahan tertunda'; }
+  else { badge = 'bg-emerald-100 text-emerald-700'; text = 'Tersinkron dengan Supabase'; }
+
+  const last = lastSyncAt ? new Date(lastSyncAt).toLocaleString('id-ID') : '-';
+  const hasLocal = !!localStorage.getItem(STORAGE_KEYS.DATA);
+
+  return `
+    <div class="glass-card rounded-2xl p-5 md:p-6 border border-slate-200 space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+          <i data-lucide="cloud" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-slate-800 text-sm md:text-base">Sinkronisasi Database</h3>
+          <p class="text-[11px] text-slate-500">Supabase adalah sumber data utama. Tambah, ubah, dan hapus langsung tersimpan di sana.</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <span class="px-2.5 py-1 rounded-full font-semibold ${badge}">${text}</span>
+        <span class="text-slate-500">Terakhir sinkron: <strong class="text-slate-700">${last}</strong></span>
+      </div>
+      ${cloudHealth.ok === false && cloud ? renderUsageSetupBox(escapeHtml(cloudHealth.message || 'Database Supabase belum siap.')) : ''}
+      <div class="flex flex-wrap gap-2">
+        <button onclick="manualSyncNow()" ${cloud ? '' : 'disabled'} class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sinkronkan Sekarang
+        </button>
+        <button onclick="initializeCloudFromLocal().then(() => routeTo('pengaturan'))" ${cloud && hasLocal ? '' : 'disabled'} class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+          <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> Kirim Data Perangkat Ini ke Supabase
+        </button>
+        <button onclick="copyUsageSql()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+          <i data-lucide="copy" class="w-3.5 h-3.5"></i> Salin SQL Setup
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function manualSyncNow() {
+  showSyncOverlay(true, 'Menyinkronkan data...');
+  let r;
+  try {
+    await flushOutbox();
+    r = await syncFromCloud();
+  } finally {
+    showSyncOverlay(false);
+  }
+  routeTo('pengaturan');
+  showToast(r && r.ok ? 'Sinkronisasi selesai.' : 'Sinkronisasi bermasalah, lihat status di Pengaturan.', r && r.ok ? 'success' : 'warning');
 }
 
 // ==============================================================================
@@ -3844,7 +4382,236 @@ const STORAGE_PLANS = {
   pro:  { label: 'Pro (8 GB)',    bytes: 8 * 1024 * 1024 * 1024 }
 };
 
-const USAGE_SQL = `create or replace function public.get_db_usage()
+const SETUP_SQL = `-- ============================================================================
+-- PKBM MAJU JAYA - SETUP DATABASE SUPABASE (jalankan SEKALI, aman diulang)
+-- Supabase Dashboard > SQL Editor > New query > tempel semua > Run
+-- ============================================================================
+
+-- 1. TABEL (dibuat jika belum ada) ------------------------------------------
+create table if not exists public.tutor_guru (
+  id text primary key
+);
+create table if not exists public.warga_belajar (
+  id text primary key
+);
+create table if not exists public.jadwal_modul (
+  id text primary key
+);
+create table if not exists public.presensi (
+  id text primary key
+);
+create table if not exists public.penilaian (
+  id text primary key
+);
+create table if not exists public.administrasi_kas (
+  id text primary key
+);
+create table if not exists public.raport (
+  id text primary key
+);
+create table if not exists public.app_settings (
+  key text primary key
+);
+
+-- 2. KOLOM (ditambahkan jika belum ada; tidak mengubah kolom yang sudah ada) --
+alter table public.tutor_guru
+  add column if not exists nip_guru text,
+  add column if not exists nama_lengkap text,
+  add column if not exists mata_pelajaran text,
+  add column if not exists no_hp text,
+  add column if not exists password text,
+  add column if not exists created_at timestamptz default now();
+
+alter table public.warga_belajar
+  add column if not exists nisn text,
+  add column if not exists nama_lengkap text,
+  add column if not exists paket text,
+  add column if not exists tingkat text,
+  add column if not exists jenis_kelamin text,
+  add column if not exists no_hp text,
+  add column if not exists alamat text,
+  add column if not exists status text,
+  add column if not exists password text,
+  add column if not exists created_at timestamptz default now();
+
+alter table public.jadwal_modul
+  add column if not exists paket text,
+  add column if not exists mata_pelajaran text,
+  add column if not exists tutor_nama text,
+  add column if not exists hari_waktu text,
+  add column if not exists link_modul text,
+  add column if not exists keterangan text,
+  add column if not exists created_at timestamptz default now();
+
+alter table public.presensi
+  add column if not exists warga_belajar_id text,
+  add column if not exists tanggal text,
+  add column if not exists paket text,
+  add column if not exists status_kehadiran text,
+  add column if not exists keterangan text,
+  add column if not exists created_at timestamptz default now();
+
+alter table public.penilaian
+  add column if not exists warga_belajar_id text,
+  add column if not exists paket text,
+  add column if not exists mapel text,
+  add column if not exists jenis text,
+  add column if not exists nilai numeric,
+  add column if not exists catatan text,
+  add column if not exists created_at timestamptz default now();
+
+alter table public.administrasi_kas
+  add column if not exists tanggal text,
+  add column if not exists kategori text,
+  add column if not exists tipe text,
+  add column if not exists jumlah numeric,
+  add column if not exists keterangan text,
+  add column if not exists created_at timestamptz default now();
+
+alter table public.raport
+  add column if not exists warga_belajar_id text,
+  add column if not exists wali_kelas_nama text,
+  add column if not exists wali_kelas_nip text,
+  add column if not exists kepala_pkbm_nama text,
+  add column if not exists kepala_pkbm_nip text,
+  add column if not exists kota_terbit text,
+  add column if not exists tanggal_terbit text,
+  add column if not exists tahun_ajaran text,
+  add column if not exists semester text,
+  add column if not exists catatan_wali text,
+  add column if not exists predikat_sikap text,
+  add column if not exists status_kenaikan text,
+  add column if not exists nilai_mapel jsonb default '[]'::jsonb,
+  add column if not exists created_at timestamptz default now();
+
+alter table public.app_settings
+  add column if not exists value jsonb,
+  add column if not exists updated_at timestamptz default now();
+
+-- 3. ROW LEVEL SECURITY -------------------------------------------------------
+-- Admin  = akun Supabase Auth (role "authenticated")  -> akses penuh.
+-- Guru / siswa login lewat tabel aplikasi (role "anon") -> dibatasi:
+--   * baca: semua tabel kecuali administrasi_kas
+--   * tulis: hanya jadwal_modul, presensi, penilaian, raport
+--   * kolom password TIDAK bisa dibaca anon (lihat bagian 4)
+alter table public.tutor_guru       enable row level security;
+alter table public.warga_belajar    enable row level security;
+alter table public.jadwal_modul     enable row level security;
+alter table public.presensi         enable row level security;
+alter table public.penilaian        enable row level security;
+alter table public.administrasi_kas enable row level security;
+alter table public.raport           enable row level security;
+alter table public.app_settings     enable row level security;
+
+-- Bersihkan kebijakan lama (termasuk 2 kebijakan bawaan yang pernah dibuat)
+do $$
+declare r record;
+begin
+  for r in
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('tutor_guru','warga_belajar','jadwal_modul','presensi',
+                        'penilaian','administrasi_kas','raport','app_settings')
+  loop
+    execute format('drop policy if exists %I on %I.%I', r.policyname, r.schemaname, r.tablename);
+  end loop;
+end $$;
+
+-- Admin: akses penuh ke semua tabel
+do $$
+declare t text;
+begin
+  foreach t in array array['tutor_guru','warga_belajar','jadwal_modul','presensi',
+                           'penilaian','administrasi_kas','raport','app_settings']
+  loop
+    execute format('create policy %I on public.%I for all to authenticated using (true) with check (true)',
+                   'admin_all_' || t, t);
+  end loop;
+end $$;
+
+-- Guru/siswa (anon): baca
+do $$
+declare t text;
+begin
+  foreach t in array array['tutor_guru','warga_belajar','jadwal_modul','presensi',
+                           'penilaian','raport','app_settings']
+  loop
+    execute format('create policy %I on public.%I for select to anon using (true)',
+                   'anon_read_' || t, t);
+  end loop;
+end $$;
+
+-- Guru (anon): tulis hanya pada tabel kerja guru
+do $$
+declare t text;
+begin
+  foreach t in array array['jadwal_modul','presensi','penilaian','raport']
+  loop
+    execute format('create policy %I on public.%I for insert to anon with check (true)', 'anon_insert_' || t, t);
+    execute format('create policy %I on public.%I for update to anon using (true) with check (true)', 'anon_update_' || t, t);
+    execute format('create policy %I on public.%I for delete to anon using (true)', 'anon_delete_' || t, t);
+  end loop;
+end $$;
+
+-- 4. SEMBUNYIKAN KOLOM PASSWORD DARI ANON ------------------------------------
+-- anon hanya boleh membaca kolom selain "password".
+do $$
+declare t text; cols text;
+begin
+  foreach t in array array['tutor_guru','warga_belajar']
+  loop
+    execute format('revoke select on public.%I from anon', t);
+    select string_agg(format('%I', column_name), ', ' order by ordinal_position)
+      into cols
+      from information_schema.columns
+      where table_schema = 'public' and table_name = t and column_name <> 'password';
+    execute format('grant select (%s) on public.%I to anon', cols, t);
+  end loop;
+end $$;
+
+-- 5. FUNGSI LOGIN GURU / SISWA (memeriksa password di sisi server) ------------
+create or replace function public.login_guru(p_identifier text, p_password text)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select to_jsonb(g) - 'password' - 'created_at'
+  from public.tutor_guru g
+  where length(coalesce(p_identifier, '')) > 0
+    and g.password is not null
+    and g.password = p_password
+    and (
+      lower(coalesce(g.nip_guru, '')) = lower(p_identifier)
+      or g.id = p_identifier
+      or lower(coalesce(g.nama_lengkap, '')) like '%' || lower(p_identifier) || '%'
+    )
+  limit 1;
+$$;
+
+create or replace function public.login_siswa(p_identifier text, p_password text)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select to_jsonb(s) - 'password' - 'created_at'
+  from public.warga_belajar s
+  where length(coalesce(p_identifier, '')) > 0
+    and s.password is not null
+    and s.password = p_password
+    and (s.nisn = p_identifier or s.id = p_identifier)
+  limit 1;
+$$;
+
+revoke all on function public.login_guru(text, text)  from public;
+revoke all on function public.login_siswa(text, text) from public;
+grant execute on function public.login_guru(text, text)  to anon, authenticated;
+grant execute on function public.login_siswa(text, text) to anon, authenticated;
+
+-- 6. FUNGSI UKUR PENYIMPANAN (menu Pengaturan, khusus admin) -----------------
+create or replace function public.get_db_usage()
 returns json
 language plpgsql
 security definer
@@ -3867,7 +4634,12 @@ end;
 $$;
 
 revoke all on function public.get_db_usage() from public, anon;
-grant execute on function public.get_db_usage() to authenticated;`;
+grant execute on function public.get_db_usage() to authenticated;
+
+-- Selesai. Muat ulang schema cache PostgREST agar kolom/fungsi baru langsung terbaca:
+notify pgrst, 'reload schema';
+`;
+const USAGE_SQL = SETUP_SQL;
 
 function formatBytes(b) {
   if (b == null || isNaN(b)) return '-';
@@ -3899,6 +4671,7 @@ function renderPengaturanView() {
   const plan = getStoragePlanKey();
   return `
     <div class="space-y-6 max-w-3xl">
+      ${renderSyncCard()}
       <div class="glass-card rounded-2xl p-5 md:p-6 border border-slate-200 space-y-5">
         <div class="flex items-start justify-between gap-3">
           <div class="flex items-center gap-3">
@@ -3959,7 +4732,7 @@ function renderUsageBar(pct, usedBytes, limitBytes) {
 }
 
 function copyUsageSql() {
-  const done = () => showToast('SQL berhasil disalin. Tempel di Supabase > SQL Editor lalu klik Run.', 'success');
+  const done = () => showToast('SQL setup disalin. Tempel di Supabase > SQL Editor lalu klik Run.', 'success');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(USAGE_SQL).then(done).catch(() => showToast('Gagal menyalin, salin manual dari kotak SQL.', 'warning'));
   } else {
@@ -3971,7 +4744,7 @@ function renderUsageSetupBox(message) {
   return `
     <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3 text-xs text-amber-900">
       <p class="font-semibold">${message}</p>
-      <p>Supabase tidak membuka data ukuran database ke aplikasi secara langsung. Jalankan SQL berikut <strong>satu kali</strong> di Supabase Dashboard &rarr; <strong>SQL Editor</strong>, lalu klik <strong>Muat Ulang</strong> di sini. Fungsi ini hanya bisa dipanggil oleh akun yang sudah login (bukan publik).</p>
+      <p>Jalankan SQL berikut <strong>satu kali</strong> di Supabase Dashboard &rarr; <strong>SQL Editor</strong> (tempel semua, klik Run), lalu klik <strong>Sinkronkan Sekarang</strong> atau <strong>Muat Ulang</strong> di sini. Aman dijalankan berulang.</p>
       <pre class="bg-white border border-amber-200 rounded-lg p-3 text-[10.5px] leading-relaxed text-slate-800 overflow-x-auto max-h-56 whitespace-pre">${escapeHtml(USAGE_SQL)}</pre>
       <button onclick="copyUsageSql()" class="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
         <i data-lucide="copy" class="w-3.5 h-3.5"></i> Salin SQL
@@ -4072,20 +4845,41 @@ document.addEventListener('touchmove', e => {
 document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 
 // 11. APP INITIALIZATION
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   lucide.createIcons();
   applyInstitutionBrand();
-  initSupabaseClient();
   registerDynamicServiceWorker();
+  await initSupabaseClient();
+
+  const showLogin = () => {
+    document.getElementById('view-login').classList.remove('hidden');
+    document.getElementById('view-app').classList.add('hidden');
+  };
 
   const savedSession = localStorage.getItem(STORAGE_KEYS.SESSION);
   if (savedSession) {
     try {
       const parsed = JSON.parse(savedSession);
       if (parsed && parsed.role) {
+        // Admin mode cloud wajib punya sesi Supabase yang masih berlaku
+        if (isCloudMode() && parsed.role === 'admin') {
+          let hasSession = false;
+          try {
+            const { data } = await supabaseClient.auth.getSession();
+            hasSession = !!(data && data.session);
+          } catch (e) {}
+          if (!hasSession) {
+            localStorage.removeItem(STORAGE_KEYS.SESSION);
+            showLogin();
+            return;
+          }
+        }
+
         currentUser = parsed;
         document.getElementById('view-login').classList.add('hidden');
         document.getElementById('view-app').classList.remove('hidden');
+        if (isCloudMode()) await cloudPostLoginSetup();
+        applyInstitutionBrand();
         updateUserBadge();
         renderNavigation();
         routeTo('dashboard');
@@ -4094,8 +4888,7 @@ window.addEventListener('DOMContentLoaded', () => {
     } catch(e){}
   }
 
-  document.getElementById('view-login').classList.remove('hidden');
-  document.getElementById('view-app').classList.add('hidden');
+  showLogin();
 });
 </script>
 </body>
