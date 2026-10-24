@@ -348,6 +348,9 @@
           <button onclick="openInstitutionModal()" title="Ubah Logo & Data Lembaga" class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition md:hidden">
             <i data-lucide="image" class="w-4 h-4"></i>
           </button>
+          <button id="mobile-settings-btn" onclick="routeTo('pengaturan')" title="Pengaturan" class="hidden p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+          </button>
           <button onclick="openConfigModal()" title="Pengaturan Database" class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition md:hidden">
             <i data-lucide="database" class="w-4 h-4"></i>
           </button>
@@ -489,9 +492,9 @@
  * ==============================================================================
  */
 
-let IS_PREVIEW = false;
-let SUPABASE_URL = "https://qnjkiwkfvyptbrfajjir.supabase.co";
-let SUPABASE_ANON_KEY = "sb_publishable_h84U9vs2KawMf08qwD7LFg_jH2aQGIP";
+let IS_PREVIEW = true;
+let SUPABASE_URL = "";
+let SUPABASE_ANON_KEY = "";
 let supabaseClient = null;
 
 const STORAGE_KEYS = {
@@ -530,6 +533,17 @@ function getCleanPkbmName(fullName) {
     return clean;
   }
   return 'PKBM ' + clean;
+}
+
+// Pecah nama lembaga menjadi 2 baris kop: "PUSAT KEGIATAN BELAJAR MASYARAKAT" lalu "PKBM MAJU JAYA"
+function getKopTitleLines(fullName) {
+  const base = 'PUSAT KEGIATAN BELAJAR MASYARAKAT';
+  const name = (fullName || '').trim();
+  if (/PUSAT\s+KEGIATAN\s+BELAJAR\s+MASYARAKAT/i.test(name)) {
+    const second = getCleanPkbmName(name).trim();
+    return { line1: base, line2: second && second.toUpperCase() !== 'PKBM' ? second : '' };
+  }
+  return { line1: name, line2: '' };
 }
 
 function getInstitutionProfile() {
@@ -1125,7 +1139,8 @@ const ROLE_MENUS = {
     { id: 'presensi', label: 'Presensi Belajar', icon: 'clipboard-check' },
     { id: 'penilaian', label: 'Presensi Nilai', icon: 'calculator' }, // Fitur Baru Tugas/UTS/UAS
     { id: 'raport', label: 'Menu Raport Kesetaraan', icon: 'award' },
-    { id: 'administrasi', label: 'Administrasi & Kas', icon: 'wallet' }
+    { id: 'administrasi', label: 'Administrasi & Kas', icon: 'wallet' },
+    { id: 'pengaturan', label: 'Pengaturan', icon: 'settings' }
   ],
   guru: [
     { id: 'dashboard', label: 'Dashboard Tutor', icon: 'layout-dashboard' },
@@ -1156,6 +1171,14 @@ function renderNavigation() {
     </button>
   `).join('');
 
+  // Tombol Pengaturan di header HP hanya untuk admin
+  const mobSet = document.getElementById('mobile-settings-btn');
+  if (mobSet) {
+    const isAdmin = currentUser.role === 'admin';
+    mobSet.classList.toggle('hidden', !isAdmin);
+    mobSet.classList.toggle('md:hidden', isAdmin);
+  }
+
   // Mobile Bottom Nav
   const mobileNav = document.getElementById('mobile-bottom-nav');
   mobileNav.innerHTML = menuList.slice(0, 5).map(item => `
@@ -1170,6 +1193,11 @@ function renderNavigation() {
 
 function routeTo(tabId) {
   // Pengamanan: Siswa tidak diizinkan membuka menu raport & penilaian
+  if (tabId === 'pengaturan' && currentUser.role !== 'admin') {
+    showToast('Menu Pengaturan hanya untuk akun Admin.', 'warning');
+    routeTo('dashboard');
+    return;
+  }
   if (currentUser.role === 'siswa' && (tabId === 'raport' || tabId === 'penilaian')) {
     showToast('Raport dan penilaian resmi hanya dikelola oleh Tutor/Admin.', 'warning');
     routeTo('dashboard');
@@ -1191,7 +1219,8 @@ function routeTo(tabId) {
     presensi: { title: 'Presensi & Kehadiran', sub: 'Pencatatan dan rekap kehadiran warga belajar' },
     penilaian: { title: 'Presensi Nilai (Tugas, UTS, UAS)', sub: 'Pengisian nilai formatif, sumatif tengah & akhir semester' },
     raport: { title: 'Menu Raport Kesetaraan (Format A4)', sub: 'Pengelolaan nilai, deskripsi capaian, dan cetak multi-halaman A4 resmi' },
-    administrasi: { title: 'Administrasi & Keuangan PKBM', sub: 'Pencatatan kas masuk, keluar, dan dana BOP operasional' }
+    administrasi: { title: 'Administrasi & Keuangan PKBM', sub: 'Pencatatan kas masuk, keluar, dan dana BOP operasional' },
+    pengaturan: { title: 'Pengaturan', sub: 'Penyimpanan database Supabase dan konfigurasi sistem (khusus Admin)' }
   };
 
   const meta = titles[tabId] || { title: 'PKBM Mandiri', sub: 'Sistem Administrasi Kesetaraan' };
@@ -1222,6 +1251,10 @@ function routeTo(tabId) {
       break;
     case 'administrasi':
       contentBody.innerHTML = renderAdministrasiView();
+      break;
+    case 'pengaturan':
+      contentBody.innerHTML = renderPengaturanView();
+      loadStorageUsage();
       break;
     default:
       contentBody.innerHTML = `<div class="p-8 text-center text-slate-500 text-sm">Halaman sedang dimuat...</div>`;
@@ -2726,11 +2759,10 @@ function renderStudentRaportSheet(student, raport) {
     waliKelasNip = waliTutorObj.nip_guru.trim();
   }
 
-  const kepalaNama = raport.kepala_pkbm_nama || profile.nama_kepala;
+  // Kepala PKBM selalu mengikuti Identitas Lembaga (satu sumber data), bukan salinan lama di tiap raport
+  const kepalaNama = (profile.nama_kepala || '').trim() || raport.kepala_pkbm_nama || '-';
   let kepalaNip = '-';
-  if (raport.kepala_pkbm_nip && raport.kepala_pkbm_nip.trim() !== '' && raport.kepala_pkbm_nip.trim() !== '-') {
-    kepalaNip = raport.kepala_pkbm_nip.trim();
-  } else if (profile.nip_kepala && profile.nip_kepala.trim() !== '' && profile.nip_kepala.trim() !== '-') {
+  if (profile.nip_kepala && profile.nip_kepala.trim() !== '' && profile.nip_kepala.trim() !== '-') {
     kepalaNip = profile.nip_kepala.trim();
   }
 
@@ -2758,8 +2790,9 @@ function renderStudentRaportSheet(student, raport) {
 
           <!-- Teks KOP Rata Tengah Sempurna Tanpa Terpotong -->
           <div class="flex-1 text-center px-1">
-            <h2 class="text-sm sm:text-base md:text-[17px] font-black uppercase tracking-tight text-slate-900 leading-snug">
-              ${profile.nama_pkbm}
+            <h2 class="font-black uppercase tracking-tight text-slate-900 leading-tight">
+              <span class="block text-[11px] sm:text-sm md:text-[15px]">${getKopTitleLines(profile.nama_pkbm).line1}</span>
+              ${getKopTitleLines(profile.nama_pkbm).line2 ? `<span class="block text-sm sm:text-base md:text-[19px] mt-0.5">${getKopTitleLines(profile.nama_pkbm).line2}</span>` : ''}
             </h2>
             <p class="text-[11px] md:text-xs text-slate-700 font-semibold mt-1">Penyelenggara Pendidikan Nonformal Kesetaraan Paket A, Paket B, dan Paket C</p>
             <p class="text-[10px] md:text-[11px] text-slate-600 mt-0.5">Izin Operasional: ${profile.izin_operasional} • NPSN: ${profile.npsn}</p>
@@ -2906,11 +2939,11 @@ function openModalEditRaport(raportId) {
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block font-semibold text-slate-700 mb-1">Nama Kepala PKBM</label>
-            <input type="text" id="edit-rap-kepala" value="${r.kepala_pkbm_nama || profile.nama_kepala}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+            <input type="text" id="edit-rap-kepala" value="${profile.nama_kepala || r.kepala_pkbm_nama || ''}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
           </div>
           <div>
             <label class="block font-semibold text-slate-700 mb-1">NIP Kepala PKBM (Isi '-' jika non-NIP)</label>
-            <input type="text" id="edit-rap-nip-kepala" value="${r.kepala_pkbm_nip || profile.nip_kepala || '-'}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white">
+            <input type="text" id="edit-rap-nip-kepala" value="${profile.nip_kepala || r.kepala_pkbm_nip || '-'}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white">
           </div>
         </div>
 
@@ -3030,6 +3063,9 @@ function saveRaportValues(e, raportId) {
   r.wali_kelas_nip = document.getElementById('edit-rap-nip-wali').value.trim() || '-';
   r.kepala_pkbm_nama = document.getElementById('edit-rap-kepala').value.trim();
   r.kepala_pkbm_nip = document.getElementById('edit-rap-nip-kepala').value.trim() || '-';
+  // Simpan juga ke Identitas Lembaga agar semua raport & cetak ikut berubah
+  const _prof = getInstitutionProfile();
+  saveInstitutionProfileData({ ..._prof, nama_kepala: r.kepala_pkbm_nama || _prof.nama_kepala, nip_kepala: r.kepala_pkbm_nip });
   r.kota_terbit = document.getElementById('edit-rap-kota').value.trim();
   r.tanggal_terbit = document.getElementById('edit-rap-tgl').value.trim();
 
@@ -3087,7 +3123,7 @@ function getOfficialExportKop() {
   const profile = getInstitutionProfile();
   return `
     <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px; font-family: Arial, sans-serif;">
-      <h2 style="margin: 0; font-size: 13pt; font-weight: bold; text-transform: uppercase;">${profile.nama_pkbm}</h2>
+      <h2 style="margin: 0; font-size: 12pt; font-weight: bold; text-transform: uppercase; line-height: 1.25;">${getKopTitleLines(profile.nama_pkbm).line1}${getKopTitleLines(profile.nama_pkbm).line2 ? `<br><span style="font-size: 15pt;">${getKopTitleLines(profile.nama_pkbm).line2}</span>` : ''}</h2>
       <p style="margin: 2px 0; font-size: 9.5pt;">Penyelenggara Pendidikan Nonformal Kesetaraan Paket A, Paket B, dan Paket C</p>
       <p style="margin: 1px 0; font-size: 8.5pt;">Izin Operasional: ${profile.izin_operasional} | NPSN: ${profile.npsn}</p>
       <p style="margin: 1px 0; font-size: 8.5pt;">${profile.alamat}</p>
@@ -3797,6 +3833,223 @@ async function autoSetupDatabase() {
   } catch (err) {
     console.error('autoSetupDatabase error:', err);
   }
+}
+
+// ==============================================================================
+// PENGATURAN (ADMIN): PERSENTASE PENYIMPANAN DATABASE SUPABASE
+// ==============================================================================
+const STORAGE_PLAN_KEY = 'pkbm_storage_plan_v1';
+const STORAGE_PLANS = {
+  free: { label: 'Free (500 MB)', bytes: 500 * 1024 * 1024 },
+  pro:  { label: 'Pro (8 GB)',    bytes: 8 * 1024 * 1024 * 1024 }
+};
+
+const USAGE_SQL = `create or replace function public.get_db_usage()
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.role() <> 'authenticated' then
+    raise exception 'Akses ditolak';
+  end if;
+  return json_build_object(
+    'db_bytes', pg_database_size(current_database()),
+    'tables', (
+      select coalesce(json_agg(json_build_object('name', c.relname, 'bytes', pg_total_relation_size(c.oid)) order by pg_total_relation_size(c.oid) desc), '[]'::json)
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'r'
+    )
+  );
+end;
+$$;
+
+revoke all on function public.get_db_usage() from public, anon;
+grant execute on function public.get_db_usage() to authenticated;`;
+
+function formatBytes(b) {
+  if (b == null || isNaN(b)) return '-';
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+  return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+}
+function escapeHtml(t) {
+  return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function getStoragePlanKey() {
+  const k = localStorage.getItem(STORAGE_PLAN_KEY);
+  return STORAGE_PLANS[k] ? k : 'free';
+}
+function changeStoragePlan(key) {
+  if (!STORAGE_PLANS[key]) return;
+  localStorage.setItem(STORAGE_PLAN_KEY, key);
+  loadStorageUsage();
+}
+function usageColor(pct) {
+  if (pct >= 90) return { bar: 'bg-rose-500', text: 'text-rose-600' };
+  if (pct >= 70) return { bar: 'bg-amber-500', text: 'text-amber-600' };
+  return { bar: 'bg-emerald-500', text: 'text-emerald-600' };
+}
+
+function renderPengaturanView() {
+  if (!currentUser || currentUser.role !== 'admin') return '';
+  const plan = getStoragePlanKey();
+  return `
+    <div class="space-y-6 max-w-3xl">
+      <div class="glass-card rounded-2xl p-5 md:p-6 border border-slate-200 space-y-5">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <i data-lucide="database" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-slate-800 text-sm md:text-base">Ruang Penyimpanan Database Supabase</h3>
+              <p class="text-[11px] text-slate-500">Hanya terlihat oleh akun Admin</p>
+            </div>
+          </div>
+          <button onclick="loadStorageUsage()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Muat Ulang
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <label class="font-semibold text-slate-700">Paket Supabase:</label>
+          <select onchange="changeStoragePlan(this.value)" class="px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold">
+            ${Object.entries(STORAGE_PLANS).map(([k, v]) => `<option value="${k}" ${k === plan ? 'selected' : ''}>${v.label}</option>`).join('')}
+          </select>
+        </div>
+
+        <div id="storage-usage-body">
+          <div class="text-xs text-slate-500 py-6 text-center">Memuat data penyimpanan...</div>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-5 md:p-6 border border-slate-200 space-y-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <i data-lucide="smartphone" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-800 text-sm md:text-base">Penyimpanan Perangkat Ini</h3>
+            <p class="text-[11px] text-slate-500">Data aplikasi yang tersimpan di browser (batas sekitar 5 MB)</p>
+          </div>
+        </div>
+        <div id="local-usage-body"></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderUsageBar(pct, usedBytes, limitBytes) {
+  const c = usageColor(pct);
+  const shown = pct < 0.1 && usedBytes > 0 ? '<0,1' : pct.toFixed(1).replace('.', ',');
+  return `
+    <div class="flex items-end justify-between mb-2">
+      <div class="text-3xl md:text-4xl font-black ${c.text} leading-none">${shown}%</div>
+      <div class="text-xs text-slate-600 text-right"><strong>${formatBytes(usedBytes)}</strong> dari ${formatBytes(limitBytes)}</div>
+    </div>
+    <div class="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
+      <div class="h-full ${c.bar} rounded-full transition-all duration-500" style="width: ${Math.max(Math.min(pct, 100), usedBytes > 0 ? 1 : 0)}%"></div>
+    </div>
+    <p class="text-[11px] text-slate-500 mt-2">Sisa ruang: ${formatBytes(Math.max(limitBytes - usedBytes, 0))}</p>
+  `;
+}
+
+function copyUsageSql() {
+  const done = () => showToast('SQL berhasil disalin. Tempel di Supabase > SQL Editor lalu klik Run.', 'success');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(USAGE_SQL).then(done).catch(() => showToast('Gagal menyalin, salin manual dari kotak SQL.', 'warning'));
+  } else {
+    showToast('Salin manual dari kotak SQL.', 'warning');
+  }
+}
+
+function renderUsageSetupBox(message) {
+  return `
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3 text-xs text-amber-900">
+      <p class="font-semibold">${message}</p>
+      <p>Supabase tidak membuka data ukuran database ke aplikasi secara langsung. Jalankan SQL berikut <strong>satu kali</strong> di Supabase Dashboard &rarr; <strong>SQL Editor</strong>, lalu klik <strong>Muat Ulang</strong> di sini. Fungsi ini hanya bisa dipanggil oleh akun yang sudah login (bukan publik).</p>
+      <pre class="bg-white border border-amber-200 rounded-lg p-3 text-[10.5px] leading-relaxed text-slate-800 overflow-x-auto max-h-56 whitespace-pre">${escapeHtml(USAGE_SQL)}</pre>
+      <button onclick="copyUsageSql()" class="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+        <i data-lucide="copy" class="w-3.5 h-3.5"></i> Salin SQL
+      </button>
+    </div>
+  `;
+}
+
+async function loadStorageUsage() {
+  if (!currentUser || currentUser.role !== 'admin') return;
+
+  // Penyimpanan lokal perangkat
+  const localBox = document.getElementById('local-usage-body');
+  if (localBox) {
+    let total = 0;
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        total += (k.length + (localStorage.getItem(k) || '').length) * 2;
+      }
+    } catch (e) {}
+    const limit = 5 * 1024 * 1024;
+    localBox.innerHTML = renderUsageBar((total / limit) * 100, total, limit);
+  }
+
+  const box = document.getElementById('storage-usage-body');
+  if (!box) return;
+
+  if (!supabaseClient) {
+    box.innerHTML = `
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 space-y-3">
+        <p>Aplikasi belum terhubung ke Supabase (Mode Demo). Isi <strong>Supabase URL</strong> dan <strong>Anon Key</strong> terlebih dahulu.</p>
+        <button onclick="openConfigModal()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold">Buka Koneksi Supabase</button>
+      </div>`;
+    lucide.createIcons({ root: box });
+    return;
+  }
+
+  box.innerHTML = '<div class="text-xs text-slate-500 py-6 text-center">Memuat data penyimpanan...</div>';
+
+  try {
+    const { data, error } = await supabaseClient.rpc('get_db_usage');
+    if (error) throw error;
+
+    const info = typeof data === 'string' ? JSON.parse(data) : data;
+    const used = Number(info.db_bytes) || 0;
+    const limit = STORAGE_PLANS[getStoragePlanKey()].bytes;
+    const pct = (used / limit) * 100;
+    const tables = Array.isArray(info.tables) ? info.tables : [];
+
+    box.innerHTML = `
+      ${renderUsageBar(pct, used, limit)}
+      ${pct >= 90 ? '<p class="text-[11px] text-rose-600 font-semibold mt-2">Penyimpanan hampir penuh. Hapus data yang tidak diperlukan atau upgrade paket Supabase.</p>' : ''}
+      ${tables.length ? `
+        <div class="mt-5">
+          <h4 class="text-xs font-bold text-slate-700 mb-2">Ukuran per Tabel</h4>
+          <div class="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white">
+            ${tables.map(t => `
+              <div class="flex items-center justify-between px-3 py-2 text-xs">
+                <span class="font-mono text-slate-700 truncate">${escapeHtml(t.name)}</span>
+                <span class="font-semibold text-slate-800 shrink-0 ml-3">${formatBytes(Number(t.bytes))}</span>
+              </div>`).join('')}
+          </div>
+        </div>` : ''}
+      <p class="text-[10px] text-slate-400 mt-3">Angka mencakup seluruh database (termasuk tabel sistem Supabase), jadi akan sedikit lebih besar dari jumlah tabel di atas.</p>
+    `;
+  } catch (err) {
+    const msg = String((err && (err.message || err.details)) || err || '');
+    const code = err && err.code;
+    if (code === 'PGRST202' || code === '42883' || /could not find the function|does not exist/i.test(msg)) {
+      box.innerHTML = renderUsageSetupBox('Fungsi pengukur penyimpanan belum dipasang di database Supabase.');
+    } else if (code === '42501' || /akses ditolak|permission denied|jwt|not authorized|401/i.test(msg)) {
+      box.innerHTML = `<div class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800">Akses ditolak. Pastikan Anda login sebagai Admin memakai akun Supabase (email &amp; password Admin), bukan akun demo. Detail: ${escapeHtml(msg)}</div>`;
+    } else {
+      box.innerHTML = `<div class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800">Gagal membaca penyimpanan: ${escapeHtml(msg || 'kesalahan tidak diketahui')}</div>` + renderUsageSetupBox('Jika fungsi belum pernah dipasang, jalankan SQL ini.');
+    }
+  }
+  lucide.createIcons({ root: box });
 }
 
 // 10. SERVICE WORKER REGISTRATION (file /sw.js - syarat agar bisa "Add to Home Screen"/Install)
