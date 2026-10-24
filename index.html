@@ -1,0 +1,3804 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistem Administrasi PKBM - Paket A, B, & C</title>
+  
+  <!-- PWA Manifest Data URI -->
+  <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Sistem%20Administrasi%20PKBM%22%2C%22short_name%22%3A%22PKBM%20App%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f8fafc%22%2C%22theme_color%22%3A%22%232563eb%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fplacehold.co%2F192x192%2F2563eb%2Fffffff%3Ftext%3DPKBM%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+  <meta name="theme-color" content="#2563eb">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Supabase JS Client CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            pkbm: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Full-Screen Reset for Blogger & iframe embed compatibility */
+    #pkbm-app-root {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow-y: auto;
+      background-color: #f8fafc;
+      z-index: 999999;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* Glassmorphism helpers */
+    .glass-card {
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      box-shadow: 0 10px 30px 0 rgba(30, 41, 59, 0.05);
+    }
+    .glass-header {
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+    }
+
+    /* STANDAR CETAK A4 & KONTROL MULTI-HALAMAN OTOMATIS */
+    @page {
+      size: A4 portrait;
+      margin: 14mm 15mm 16mm 15mm;
+    }
+
+    @media print {
+      body, html {
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 210mm !important;
+      }
+      #pkbm-app-root > *:not(#print-area) {
+        display: none !important;
+      }
+      #print-area {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        font-family: 'Times New Roman', Times, serif;
+        color: #000000 !important;
+        font-size: 11pt;
+        line-height: 1.35;
+      }
+      /* Cegah elemen tanda tangan atau blok catatan terpotong setengah halaman */
+      .avoid-page-break {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      /* Kepala tabel berulang otomatis jika berlanjut ke halaman 2, 3, dst */
+      table {
+        page-break-inside: auto;
+        width: 100% !important;
+        border-collapse: collapse !important;
+      }
+      tr {
+        page-break-inside: avoid;
+        page-break-after: auto;
+      }
+      thead {
+        display: table-header-group;
+      }
+      tfoot {
+        display: table-footer-group;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
+
+<div id="pkbm-app-root">
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed top-5 right-5 z-[100000] flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Confirmation Modal -->
+  <div id="confirm-modal" class="fixed inset-0 z-[99999] bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 transform transition-all scale-100">
+      <div class="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mb-4 mx-auto">
+        <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+      </div>
+      <h3 id="confirm-title" class="text-lg font-bold text-slate-900 text-center mb-2">Konfirmasi Tindakan</h3>
+      <p id="confirm-message" class="text-sm text-slate-600 text-center mb-6">Apakah Anda yakin ingin melanjutkan tindakan ini?</p>
+      <div class="flex gap-3">
+        <button id="confirm-cancel-btn" class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition text-sm">Batal</button>
+        <button id="confirm-ok-btn" class="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition shadow-md shadow-blue-500/20 text-sm">Ya, Lanjutkan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reusable Dynamic Form Modal -->
+  <div id="form-modal" class="fixed inset-0 z-[99998] bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <h3 id="modal-title" class="font-bold text-slate-800 text-base flex items-center gap-2">
+          <span>Form Data</span>
+        </h3>
+        <button onclick="closeFormModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div id="modal-body" class="p-6 overflow-y-auto flex-1 text-sm space-y-4">
+        <!-- Injected dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- AUTH / LOGIN VIEW -->
+  <div id="view-login" class="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-gradient-to-br from-blue-50 via-slate-50 to-indigo-50">
+    <div class="absolute -top-32 -left-32 w-96 h-96 bg-blue-200/40 rounded-full blur-3xl pointer-events-none"></div>
+    <div class="absolute -bottom-32 -right-32 w-96 h-96 bg-indigo-200/40 rounded-full blur-3xl pointer-events-none"></div>
+
+    <div class="max-w-md w-full glass-card rounded-3xl p-8 relative z-10 shadow-2xl border border-white/80">
+      <div class="text-center mb-8">
+        <div id="login-logo-container" class="inline-flex p-3 rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-500/30 mb-3 items-center justify-center">
+          <i data-lucide="graduation-cap" class="w-8 h-8"></i>
+        </div>
+        <h1 id="app-brand-name" class="text-2xl font-black text-slate-900 tracking-tight">SIAKAD PKBM</h1>
+        <p class="text-xs font-semibold text-blue-600 mt-1 uppercase tracking-wider">Kesetaraan Paket A • Paket B • Paket C</p>
+      </div>
+
+      <!-- Role Tabs (Admin, Guru, Siswa) -->
+      <div class="flex rounded-xl bg-slate-100 p-1 mb-6 text-xs font-semibold text-slate-600">
+        <button onclick="switchLoginRole('admin')" id="tab-login-admin" class="flex-1 py-2 rounded-lg text-center transition bg-white text-blue-600 shadow-sm">Admin</button>
+        <button onclick="switchLoginRole('guru')" id="tab-login-guru" class="flex-1 py-2 rounded-lg text-center transition text-slate-600 hover:text-slate-900">Guru / Tutor</button>
+        <button onclick="switchLoginRole('siswa')" id="tab-login-siswa" class="flex-1 py-2 rounded-lg text-center transition text-slate-600 hover:text-slate-900">Warga Belajar</button>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form" onsubmit="handleLoginSubmit(event)" class="space-y-4">
+        <div>
+          <label id="login-identifier-label" class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Email Administrator</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+              <i data-lucide="user" class="w-4 h-4"></i>
+            </span>
+            <input type="text" id="login-identifier" required class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white/80" placeholder="admin@pkbm.sch.id">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Kata Sandi / PIN</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+              <i data-lucide="lock" class="w-4 h-4"></i>
+            </span>
+            <input type="password" id="login-password" required class="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white/80" placeholder="••••••••">
+            <button type="button" onclick="togglePasswordVisibility('login-password')" class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2">
+          <span>Masuk ke Sistem</span>
+          <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN APP CONTAINER (SIDEBAR + CONTENT + MOBILE NAV) -->
+  <div id="view-app" class="hidden min-h-screen flex flex-col md:flex-row pb-20 md:pb-0">
+    
+    <!-- DESKTOP FIXED SIDEBAR -->
+    <aside class="w-64 glass-header border-r border-slate-200 hidden md:flex flex-col shrink-0 min-h-screen sticky top-0 z-40 bg-white/90">
+      <div class="p-5 flex items-center gap-3 border-b border-slate-100">
+        <div id="sidebar-logo-box" class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-blue-500/20 overflow-hidden shrink-0">
+          <i data-lucide="book-open" class="w-5 h-5"></i>
+        </div>
+        <div class="overflow-hidden">
+          <h2 id="sidebar-nama-pkbm" class="font-bold text-slate-800 text-sm leading-tight truncate">PKBM Mandiri</h2>
+          <span class="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full inline-block mt-0.5">Kesetaraan A • B • C</span>
+        </div>
+      </div>
+
+      <!-- Current User Badge -->
+      <div class="p-3.5 mx-3 my-2 bg-slate-50 border border-slate-200/70 rounded-xl flex items-center gap-3">
+        <div id="user-avatar-badge" class="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
+          A
+        </div>
+        <div class="overflow-hidden">
+          <h4 id="user-display-name" class="font-semibold text-xs text-slate-800 truncate">Administrator</h4>
+          <span id="user-role-badge" class="text-[10px] text-slate-500 font-medium capitalize">Admin Pengelola</span>
+        </div>
+      </div>
+
+      <!-- Sidebar Navigation Menu (Dynamic by Role) -->
+      <nav id="sidebar-nav" class="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
+        <!-- Rendered via renderNavigation() -->
+      </nav>
+
+      <!-- Sidebar Footer -->
+      <div class="p-3 border-t border-slate-100 space-y-1">
+        <button onclick="openInstitutionModal()" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 rounded-xl transition">
+          <i data-lucide="image" class="w-4 h-4 text-slate-400"></i>
+          <span>Identitas & Logo PKBM</span>
+        </button>
+        <button onclick="openConfigModal()" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 rounded-xl transition">
+          <i data-lucide="database" class="w-4 h-4 text-slate-400"></i>
+          <span>Koneksi Supabase</span>
+        </button>
+        <button onclick="handleLogout()" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+          <span>Keluar Akun</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="flex-1 flex flex-col min-w-0">
+      
+      <!-- Top Bar -->
+      <header class="glass-header sticky top-0 z-30 px-4 md:px-8 py-3.5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="md:hidden p-2 bg-blue-600 text-white rounded-lg">
+            <i data-lucide="book-open" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h1 id="page-title" class="text-base md:text-lg font-bold text-slate-800">Dashboard</h1>
+            <p id="page-subtitle" class="text-[11px] text-slate-500 hidden md:block">Ringkasan status & kegiatan warga belajar PKBM</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2.5">
+          <!-- Live Indicator & Sync -->
+          <div id="status-chip" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span id="sync-text">Mode Demo</span>
+          </div>
+
+          <!-- Quick Actions -->
+          <button onclick="openInstitutionModal()" title="Ubah Logo & Data Lembaga" class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition md:hidden">
+            <i data-lucide="image" class="w-4 h-4"></i>
+          </button>
+          <button onclick="openConfigModal()" title="Pengaturan Database" class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition md:hidden">
+            <i data-lucide="database" class="w-4 h-4"></i>
+          </button>
+          <button onclick="handleLogout()" title="Keluar" class="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition md:hidden">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Dynamic Content Body -->
+      <div id="content-body" class="p-4 md:p-8 flex-1 max-w-7xl mx-auto w-full">
+        <!-- Injected via routeTo() -->
+      </div>
+    </main>
+
+    <!-- MOBILE FLOATING BOTTOM NAVIGATION BAR -->
+    <nav id="mobile-bottom-nav" class="md:hidden fixed bottom-3 left-4 right-4 z-40 bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xl p-1.5 flex justify-around">
+      <!-- Rendered via renderNavigation() -->
+    </nav>
+  </div>
+
+  <!-- MODAL: UBAH LOGO & IDENTITAS PKBM -->
+  <div id="institution-modal" class="fixed inset-0 z-[99999] bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div class="flex items-center gap-2 text-slate-800">
+          <i data-lucide="image" class="w-5 h-5 text-blue-600"></i>
+          <h3 class="font-bold text-base">Identitas & Logo Resmi PKBM</h3>
+        </div>
+        <button onclick="closeInstitutionModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form onsubmit="saveInstitutionSettings(event)" class="space-y-4 text-xs">
+        <!-- Logo Preview & Upload -->
+        <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row items-center gap-4">
+          <div id="logo-preview-box" class="w-20 h-20 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-sm overflow-hidden shrink-0">
+            <span class="text-xs text-slate-400 font-bold">Logo</span>
+          </div>
+          <div class="space-y-2 flex-1 w-full text-center sm:text-left">
+            <label class="block font-semibold text-slate-700">Pilih Berkas Logo (PNG/JPG/SVG)</label>
+            <input type="file" id="cfg-logo-file" accept="image/*" onchange="handleLogoFileSelect(event)" class="text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer w-full">
+            <p class="text-[10px] text-slate-500">Logo otomatis dikonversi dan disimpan ke memori aplikasi tanpa server tambahan.</p>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Nama Resmi Lembaga PKBM</label>
+          <input type="text" id="cfg-pkbm-nama" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">NPSN</label>
+            <input type="text" id="cfg-pkbm-npsn" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">No. Izin Operasional</label>
+            <input type="text" id="cfg-pkbm-izin" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Alamat Lengkap Lembaga</label>
+          <textarea id="cfg-pkbm-alamat" rows="2" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Nama Kepala PKBM</label>
+            <input type="text" id="cfg-pkbm-kepala" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">NIP Kepala PKBM (Isi '-' jika non-NIP)</label>
+            <input type="text" id="cfg-pkbm-nip-kepala" placeholder="Contoh: 19750812... atau '-'" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Kota Penerbitan Raport</label>
+            <input type="text" id="cfg-pkbm-kota" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Tanggal Cetak Raport</label>
+            <input type="text" id="cfg-pkbm-tgl-cetak" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+          </div>
+        </div>
+
+        <div class="mt-5 pt-3 border-t border-slate-100 flex gap-2 justify-end">
+          <button type="button" onclick="closeInstitutionModal()" class="px-4 py-2 text-xs font-medium border border-slate-200 rounded-xl hover:bg-slate-50">Batal</button>
+          <button type="submit" class="px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700">Simpan Identitas & Logo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: SUPABASE CONFIGURATION -->
+  <div id="config-modal" class="fixed inset-0 z-[99999] bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div class="flex items-center gap-2 text-slate-800">
+          <i data-lucide="database" class="w-5 h-5 text-blue-600"></i>
+          <h3 class="font-bold text-base">Konfigurasi Supabase Backend</h3>
+        </div>
+        <button onclick="closeConfigModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <p class="text-xs text-slate-500 mb-4 leading-relaxed">
+        Aplikasi dapat berjalan dalam <strong>Mode Demo</strong> (In-Memory/Storage) atau terhubung langsung ke database <strong>Supabase (PostgreSQL)</strong>.
+      </p>
+      <div class="space-y-3.5">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">SUPABASE URL</label>
+          <input type="text" id="cfg-supabase-url" placeholder="https://xyzcompany.supabase.co" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">SUPABASE ANON KEY</label>
+          <input type="password" id="cfg-supabase-key" placeholder="eyJhbGciOiJIUzI1NiIsIn..." class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600">
+        </div>
+      </div>
+      <div class="mt-6 flex gap-3">
+        <button onclick="closeConfigModal()" class="flex-1 px-4 py-2 text-xs font-medium border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50">Tutup</button>
+        <button onclick="saveSupabaseConfig()" class="flex-1 px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md shadow-blue-500/20">Simpan & Hubungkan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRINTABLE RAPORT CONTAINER (Used strictly by window.print() on standard A4) -->
+  <div id="print-area" class="hidden"></div>
+</div>
+
+<script>
+/**
+ * ==============================================================================
+ * SISTEM ADMINISTRASI PKBM (PAKET A, B, C) - PEMBARUAN PRESENSI NILAI & RAPORT A4
+ * ==============================================================================
+ */
+
+let IS_PREVIEW = true;
+let SUPABASE_URL = "";
+let SUPABASE_ANON_KEY = "";
+let supabaseClient = null;
+
+const STORAGE_KEYS = {
+  SESSION: 'pkbm_session_v4',
+  CONFIG: 'pkbm_config_v4',
+  DATA: 'pkbm_mock_data_v4',
+  INSTITUTION: 'pkbm_institution_profile_v4'
+};
+
+let currentUser = null;
+let currentTab = 'dashboard';
+let temporaryLogoBase64 = null;
+
+// PROFIL DEFAULT LEMBAGA PKBM & KEPALA
+const DEFAULT_INSTITUTION = {
+  nama_pkbm: 'PUSAT KEGIATAN BELAJAR MASYARAKAT (PKBM) MAJU JAYA',
+  npsn: 'P9901234',
+  izin_operasional: '421.9/PKBM/2024',
+  alamat: 'Jl. Merdeka No. 45, Pontianak',
+  kontak_email: 'info@pkbm.sch.id',
+  kontak_telp: '0812-3456-7890',
+  kota_terbit: 'Pontianak',
+  tanggal_cetak: '24 Oktober 2026',
+  nama_kepala: 'H. Suryadi, S.Pd., M.M.',
+  nip_kepala: '19750812 200003 1 004',
+  logo_url: ''
+};
+
+function getCleanPkbmName(fullName) {
+  if (!fullName) return 'PKBM';
+  let clean = fullName.replace(/PUSAT\s+KEGIATAN\s+BELAJAR\s+MASYARAKAT/gi, '').replace(/\(|\)/g, '').trim();
+  if (clean.toUpperCase().startsWith('PKBM')) {
+    return clean;
+  }
+  return 'PKBM ' + clean;
+}
+
+function getInstitutionProfile() {
+  const raw = localStorage.getItem(STORAGE_KEYS.INSTITUTION);
+  if (!raw) return DEFAULT_INSTITUTION;
+  try {
+    return { ...DEFAULT_INSTITUTION, ...JSON.parse(raw) };
+  } catch (e) {
+    return DEFAULT_INSTITUTION;
+  }
+}
+
+function saveInstitutionProfileData(data) {
+  localStorage.setItem(STORAGE_KEYS.INSTITUTION, JSON.stringify(data));
+}
+
+// INITIAL SEED DATA
+const INITIAL_DATA = {
+  guru: [
+    {
+      id: 'gr-001',
+      nip_guru: '19800412 200501 2 004', // Memiliki NIP
+      nama_lengkap: 'Dra. Sri Wahyuni, M.Pd.',
+      mata_pelajaran: 'Bahasa Indonesia & PPKn',
+      no_hp: '081399887711',
+      password: 'guru123'
+    },
+    {
+      id: 'gr-002',
+      nip_guru: '-', // Non-NIP (Tanda strip)
+      nama_lengkap: 'Ahmad Fauzi, S.Pd.',
+      mata_pelajaran: 'Matematika Terapan & IPA',
+      no_hp: '081399887722',
+      password: 'guru123'
+    },
+    {
+      id: 'gr-003',
+      nip_guru: '-', // Non-NIP (Tanda strip)
+      nama_lengkap: 'Bambang Sutrisno, S.Kom.',
+      mata_pelajaran: 'Keterampilan Digital & Komputer',
+      no_hp: '081399887733',
+      password: 'guru123'
+    }
+  ],
+  warga_belajar: [
+    {
+      id: 'wb-001',
+      nisn: '0081234567',
+      nama_lengkap: 'Budi Santoso',
+      paket: 'Paket A',
+      tingkat: 'Tingkat 2 (Setara Kelas 6 SD)',
+      jenis_kelamin: 'L',
+      no_hp: '081234567801',
+      alamat: 'Jl. Merdeka No. 12, Sukamaju',
+      status: 'Aktif',
+      password: 'siswa123'
+    },
+    {
+      id: 'wb-002',
+      nisn: '0079876543',
+      nama_lengkap: 'Siti Aminah',
+      paket: 'Paket B',
+      tingkat: 'Tingkat 4 (Setara Kelas 9 SMP)',
+      jenis_kelamin: 'P',
+      no_hp: '081234567802',
+      alamat: 'Dusun Harapan RT 02/01',
+      status: 'Aktif',
+      password: 'siswa123'
+    },
+    {
+      id: 'wb-003',
+      nisn: '0055432190',
+      nama_lengkap: 'Rian Kurniawan',
+      paket: 'Paket C',
+      tingkat: 'Tingkat 6 (Setara Kelas 12 SMA IPS)',
+      jenis_kelamin: 'L',
+      no_hp: '081234567803',
+      alamat: 'Komp. Bina Warga Blok C4',
+      status: 'Aktif',
+      password: 'siswa123'
+    },
+    {
+      id: 'wb-004',
+      nisn: '0061122334',
+      nama_lengkap: 'Dewi Lestari',
+      paket: 'Paket C',
+      tingkat: 'Tingkat 6 (Setara Kelas 12 SMA IPA)',
+      jenis_kelamin: 'P',
+      no_hp: '081234567804',
+      alamat: 'Jl. Cempaka No. 8',
+      status: 'Aktif',
+      password: 'siswa123'
+    }
+  ],
+  jadwal_modul: [
+    {
+      id: 'jm-001',
+      paket: 'Paket A',
+      mata_pelajaran: 'Bahasa Indonesia',
+      tutor_nama: 'Dra. Sri Wahyuni, M.Pd.',
+      hari_waktu: 'Sabtu, 08:30 - 10:00 WIB',
+      link_modul: 'https://repositori.kemdikbud.go.id/modul-kesetaraan-paket-a',
+      keterangan: 'Modul 1: Membaca Pemahaman dan Cerita Keseharian'
+    },
+    {
+      id: 'jm-002',
+      paket: 'Paket B',
+      mata_pelajaran: 'Matematika Terapan',
+      tutor_nama: 'Ahmad Fauzi, S.Pd.',
+      hari_waktu: 'Sabtu, 10:15 - 12:00 WIB',
+      link_modul: 'https://repositori.kemdikbud.go.id/modul-kesetaraan-paket-b',
+      keterangan: 'Modul 2: Aritmatika Sosial dalam Kegiatan Ekonomi Desa'
+    },
+    {
+      id: 'jm-003',
+      paket: 'Paket C',
+      mata_pelajaran: 'Sosiologi & Geografi',
+      tutor_nama: 'Dra. Sri Wahyuni, M.Pd.',
+      hari_waktu: 'Minggu, 09:00 - 11:30 WIB',
+      link_modul: 'https://repositori.kemdikbud.go.id/modul-kesetaraan-paket-c',
+      keterangan: 'Modul 3: Dinamika Sosial & Kearifan Lokal Wirausaha'
+    },
+    {
+      id: 'jm-004',
+      paket: 'Paket C',
+      mata_pelajaran: 'Keterampilan Terapan Komputer',
+      tutor_nama: 'Bambang Sutrisno, S.Kom.',
+      hari_waktu: 'Minggu, 13:00 - 15:00 WIB',
+      link_modul: 'https://drive.google.com',
+      keterangan: 'Praktik Desain Grafis Canva & Pengoperasian Spreadsheet'
+    }
+  ],
+  presensi: [
+    { id: 'pr-1', warga_belajar_id: 'wb-001', tanggal: '2026-10-10', paket: 'Paket A', status_kehadiran: 'Hadir', keterangan: 'Tatap muka modul 1' },
+    { id: 'pr-2', warga_belajar_id: 'wb-001', tanggal: '2026-10-17', paket: 'Paket A', status_kehadiran: 'Hadir', keterangan: 'Tutorial mandiri' },
+    { id: 'pr-3', warga_belajar_id: 'wb-002', tanggal: '2026-10-10', paket: 'Paket B', status_kehadiran: 'Hadir', keterangan: 'Tatap muka modul 2' },
+    { id: 'pr-4', warga_belajar_id: 'wb-002', tanggal: '2026-10-17', paket: 'Paket B', status_kehadiran: 'Izin', keterangan: 'Urusan keluarga' },
+    { id: 'pr-5', warga_belajar_id: 'wb-003', tanggal: '2026-10-11', paket: 'Paket C', status_kehadiran: 'Hadir', keterangan: 'Tatap muka modul 3' },
+    { id: 'pr-6', warga_belajar_id: 'wb-004', tanggal: '2026-10-11', paket: 'Paket C', status_kehadiran: 'Hadir', keterangan: 'Tatap muka modul 3' }
+  ],
+  // DATA PRESENSI NILAI (TUGAS, UTS, DAN UAS)
+  penilaian: [
+    { id: 'pen-1', warga_belajar_id: 'wb-001', paket: 'Paket A', mapel: 'Bahasa Indonesia', jenis: 'Tugas', nilai: 88, catatan: 'Tugas mandiri portofolio modul 1 selesai' },
+    { id: 'pen-2', warga_belajar_id: 'wb-001', paket: 'Paket A', mapel: 'Bahasa Indonesia', jenis: 'UTS', nilai: 85, catatan: 'Penilaian tengah semester' },
+    { id: 'pen-3', warga_belajar_id: 'wb-001', paket: 'Paket A', mapel: 'Bahasa Indonesia', jenis: 'UAS', nilai: 88, catatan: 'Ujian akhir semester / penuntasan modul' },
+    { id: 'pen-4', warga_belajar_id: 'wb-002', paket: 'Paket B', mapel: 'Matematika Terapan', jenis: 'Tugas', nilai: 78, catatan: 'Lembar tugas aritmatika sosial' },
+    { id: 'pen-5', warga_belajar_id: 'wb-002', paket: 'Paket B', mapel: 'Matematika Terapan', jenis: 'UTS', nilai: 74, catatan: 'Evaluasi tengah semester' },
+    { id: 'pen-6', warga_belajar_id: 'wb-002', paket: 'Paket B', mapel: 'Matematika Terapan', jenis: 'UAS', nilai: 75, catatan: 'Ujian akhir semester' }
+  ],
+  raport: [
+    {
+      id: 'rap-001',
+      warga_belajar_id: 'wb-001',
+      wali_kelas_nama: 'Dra. Sri Wahyuni, M.Pd.',
+      wali_kelas_nip: '19800412 200501 2 004',
+      kepala_pkbm_nama: 'H. Suryadi, S.Pd., M.M.',
+      kepala_pkbm_nip: '19750812 200003 1 004',
+      kota_terbit: 'Pontianak',
+      tanggal_terbit: '24 Oktober 2026',
+      tahun_ajaran: '2026/2027',
+      semester: 'Ganjil',
+      catatan_wali: 'Budi menunjukkan ketekunan belajar mandiri yang sangat baik, terutama dalam membaca modul dan aktif bertanya saat tutorial tatap muka.',
+      predikat_sikap: 'Sangat Baik',
+      status_kenaikan: 'Memenuhi Kriteria Penuntasan Modul',
+      nilai_mapel: [
+        { mapel: 'Pendidikan Agama & Budi Pekerti', akhir: 84, predikat: 'A', capaian: 'Sangat baik dalam pemahaman toleransi dan ibadah harian.' },
+        { mapel: 'Pendidikan Pancasila & Kewarganegaraan', akhir: 79, predikat: 'B', capaian: 'Memahami norma sosial kemasyarakatan dengan disiplin.' },
+        { mapel: 'Bahasa Indonesia', akhir: 87, predikat: 'A', capaian: 'Mahir menyusun ringkasan paragraf dan berkomunikasi santun.' },
+        { mapel: 'Matematika Kesetaraan', akhir: 77, predikat: 'B', capaian: 'Mampu menyelesaikan hitung pecahan dan soal cerita terapan.' },
+        { mapel: 'Ilmu Pengetahuan Alam dan Sosial (IPAS)', akhir: 81, predikat: 'A', capaian: 'Aktif mengamati kondisi lingkungan alam sekitar.' },
+        { mapel: 'Pemberdayaan & Keterampilan', akhir: 91, predikat: 'A', capaian: 'Kreatif dalam pembuatan kerajinan tangan bernilai guna.' }
+      ]
+    },
+    {
+      id: 'rap-002',
+      warga_belajar_id: 'wb-002',
+      wali_kelas_nama: 'Ahmad Fauzi, S.Pd.',
+      wali_kelas_nip: '-', // Guru Non-NIP
+      kepala_pkbm_nama: 'H. Suryadi, S.Pd., M.M.',
+      kepala_pkbm_nip: '19750812 200003 1 004',
+      kota_terbit: 'Pontianak',
+      tanggal_terbit: '24 Oktober 2026',
+      tahun_ajaran: '2026/2027',
+      semester: 'Ganjil',
+      catatan_wali: 'Siti sangat proaktif dalam diskusi daring dan pengumpulan lembar portofolio modul.',
+      predikat_sikap: 'Sangat Baik',
+      status_kenaikan: 'Memenuhi Kriteria Penuntasan Modul',
+      nilai_mapel: [
+        { mapel: 'Pendidikan Agama & Budi Pekerti', akhir: 87, predikat: 'A', capaian: 'Sangat baik dalam etika sosial dan ketaatan beribadah.' },
+        { mapel: 'Bahasa Indonesia', akhir: 85, predikat: 'A', capaian: 'Terampil menulis teks laporan hasil observasi mandiri.' },
+        { mapel: 'Bahasa Inggris Terapan', akhir: 77, predikat: 'B', capaian: 'Mampu merespon percakapan dasar sehari-hari.' },
+        { mapel: 'Matematika Terapan', akhir: 75, predikat: 'B', capaian: 'Memahami konsep aljabar dasar dan persentase.' },
+        { mapel: 'IPA & IPS Terpadu', akhir: 83, predikat: 'A', capaian: 'Memahami rantai pasok ekonomi mikro dan konservasi air.' },
+        { mapel: 'Keterampilan Wirausaha Kuliner', akhir: 91, predikat: 'A', capaian: 'Sangat kreatif merancang kemasan produk pangan lokal.' }
+      ]
+    },
+    {
+      id: 'rap-003',
+      warga_belajar_id: 'wb-003',
+      wali_kelas_nama: 'Bambang Sutrisno, S.Kom.',
+      wali_kelas_nip: '-', // Guru Non-NIP
+      kepala_pkbm_nama: 'H. Suryadi, S.Pd., M.M.',
+      kepala_pkbm_nip: '19750812 200003 1 004',
+      kota_terbit: 'Pontianak',
+      tanggal_terbit: '24 Oktober 2026',
+      tahun_ajaran: '2026/2027',
+      semester: 'Ganjil',
+      catatan_wali: 'Rian memiliki daya analisis sosiologi yang tinggi dan siap menempuh Ujian Kesetaraan Akhir.',
+      predikat_sikap: 'Sangat Baik',
+      status_kenaikan: 'Memenuhi Kriteria Penuntasan Modul',
+      nilai_mapel: [
+        { mapel: 'Pendidikan Agama & Budi Pekerti', akhir: 87, predikat: 'A', capaian: 'Menunjukkan integritas dan keteladanan yang terpuji.' },
+        { mapel: 'Bahasa Indonesia', akhir: 86, predikat: 'A', capaian: 'Mampu menyusun opini dan surat dinas resmi.' },
+        { mapel: 'Bahasa Inggris', akhir: 81, predikat: 'A', capaian: 'Mampu membaca instruksi kerja dan teknologi digital.' },
+        { mapel: 'Sosiologi & Geografi', akhir: 89, predikat: 'A', capaian: 'Kritis menganalisis perubahan sosial masyarakat modern.' },
+        { mapel: 'Ekonomi Kesetaraan', akhir: 84, predikat: 'A', capaian: 'Mampu menyusun laporan arus kas sederhana UMKM.' },
+        { mapel: 'Keterampilan Terapan Komputer', akhir: 95, predikat: 'A', capaian: 'Mahir aplikasi perkantoran dan desain publikasi digital.' }
+      ]
+    }
+  ],
+  administrasi_kas: [
+    { id: 'ks-1', tanggal: '2026-10-01', kategori: 'Pendaftaran', tipe: 'Masuk', jumlah: 250000, keterangan: 'Registrasi Warga Belajar Paket A (Budi)' },
+    { id: 'ks-2', tanggal: '2026-10-02', kategori: 'Pendaftaran', tipe: 'Masuk', jumlah: 350000, keterangan: 'Registrasi Warga Belajar Paket B (Siti)' },
+    { id: 'ks-3', tanggal: '2026-10-03', kategori: 'Pendaftaran', tipe: 'Masuk', jumlah: 450000, keterangan: 'Registrasi Warga Belajar Paket C (Rian)' },
+    { id: 'ks-4', tanggal: '2026-10-05', kategori: 'BOP/Operasional', tipe: 'Masuk', jumlah: 15000000, keterangan: 'Pencairan Dana BOP Kesetaraan Tahap II' },
+    { id: 'ks-5', tanggal: '2026-10-08', kategori: 'Modul/Bahan Ajar', tipe: 'Keluar', jumlah: 3500000, keterangan: 'Cetak Modul Pembelajaran Mandiri Siswa' }
+  ]
+};
+
+// STORAGE HELPERS
+function getDb() {
+  const raw = localStorage.getItem(STORAGE_KEYS.DATA);
+  if (!raw) {
+    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(INITIAL_DATA));
+    return JSON.parse(JSON.stringify(INITIAL_DATA));
+  }
+  try {
+    const data = JSON.parse(raw);
+    if (!data.penilaian) data.penilaian = INITIAL_DATA.penilaian;
+    return data;
+  } catch (e) {
+    return INITIAL_DATA;
+  }
+}
+
+function saveDb(data) {
+  localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(data));
+}
+
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  const colors = {
+    success: 'bg-emerald-600 text-white',
+    error: 'bg-rose-600 text-white',
+    warning: 'bg-amber-600 text-white',
+    info: 'bg-blue-600 text-white'
+  };
+
+  toast.className = `${colors[type] || colors.info} pointer-events-auto px-4 py-3 rounded-xl shadow-lg flex items-center gap-2.5 text-xs font-medium transform transition-all duration-300 translate-y-2 opacity-0 max-w-sm`;
+  
+  let iconName = 'check-circle';
+  if (type === 'error') iconName = 'alert-circle';
+  if (type === 'warning') iconName = 'alert-triangle';
+  if (type === 'info') iconName = 'info';
+
+  toast.innerHTML = `<i data-lucide="${iconName}" class="w-4 h-4 shrink-0"></i> <span>${message}</span>`;
+  container.appendChild(toast);
+  lucide.createIcons({ root: toast });
+
+  setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+  setTimeout(() => {
+    toast.classList.add('opacity-0', 'translate-y-2');
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
+}
+
+function customConfirm(message, title = 'Konfirmasi Tindakan') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirm-modal');
+    const titleEl = document.getElementById('confirm-title');
+    const msgEl = document.getElementById('confirm-message');
+    const okBtn = document.getElementById('confirm-ok-btn');
+    const cancelBtn = document.getElementById('confirm-cancel-btn');
+
+    titleEl.textContent = title;
+    msgEl.textContent = message;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    const handleOk = () => { cleanup(); resolve(true); };
+    const handleCancel = () => { cleanup(); resolve(false); };
+
+    const cleanup = () => {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      okBtn.removeEventListener('click', handleOk);
+      cancelBtn.removeEventListener('click', handleCancel);
+    };
+
+    okBtn.addEventListener('click', handleOk, { once: true });
+    cancelBtn.addEventListener('click', handleCancel, { once: true });
+  });
+}
+
+function formatRupiah(num) {
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num || 0);
+}
+
+function togglePasswordVisibility(inputId) {
+  const el = document.getElementById(inputId);
+  if (el) el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+function openFormModal(title, contentHtml) {
+  document.getElementById('modal-title').innerHTML = `<span>${title}</span>`;
+  document.getElementById('modal-body').innerHTML = contentHtml;
+  document.getElementById('form-modal').classList.remove('hidden');
+  document.getElementById('form-modal').classList.add('flex');
+  lucide.createIcons();
+}
+
+function closeFormModal() {
+  document.getElementById('form-modal').classList.add('hidden');
+  document.getElementById('form-modal').classList.remove('flex');
+}
+
+// LOGO & IDENTITAS PKBM HANDLER
+function openInstitutionModal() {
+  const profile = getInstitutionProfile();
+  document.getElementById('cfg-pkbm-nama').value = profile.nama_pkbm;
+  document.getElementById('cfg-pkbm-npsn').value = profile.npsn;
+  document.getElementById('cfg-pkbm-izin').value = profile.izin_operasional;
+  document.getElementById('cfg-pkbm-alamat').value = profile.alamat;
+  document.getElementById('cfg-pkbm-kepala').value = profile.nama_kepala;
+  document.getElementById('cfg-pkbm-nip-kepala').value = profile.nip_kepala || '-';
+  document.getElementById('cfg-pkbm-kota').value = profile.kota_terbit;
+  document.getElementById('cfg-pkbm-tgl-cetak').value = profile.tanggal_cetak;
+
+  updateLogoPreviewBox(profile.logo_url);
+  temporaryLogoBase64 = profile.logo_url;
+
+  document.getElementById('institution-modal').classList.remove('hidden');
+  document.getElementById('institution-modal').classList.add('flex');
+  lucide.createIcons();
+}
+
+function closeInstitutionModal() {
+  document.getElementById('institution-modal').classList.add('hidden');
+  document.getElementById('institution-modal').classList.remove('flex');
+}
+
+function handleLogoFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  if (file.size > 2 * 1024 * 1024) {
+    showToast('Ukuran berkas logo maksimal 2MB!', 'warning');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    temporaryLogoBase64 = evt.target.result;
+    updateLogoPreviewBox(temporaryLogoBase64);
+    showToast('Pratinjau logo berhasil dimuat. Klik Simpan!', 'info');
+  };
+  reader.readAsDataURL(file);
+}
+
+function updateLogoPreviewBox(logoSrc) {
+  const box = document.getElementById('logo-preview-box');
+  if (logoSrc) {
+    box.innerHTML = `<img src="${logoSrc}" alt="Logo PKBM" class="w-full h-full object-contain p-1">`;
+  } else {
+    box.innerHTML = `<div class="p-2 bg-blue-600 text-white rounded-xl"><i data-lucide="graduation-cap" class="w-6 h-6"></i></div>`;
+    lucide.createIcons({ root: box });
+  }
+}
+
+function saveInstitutionSettings(e) {
+  e.preventDefault();
+  const profile = {
+    nama_pkbm: document.getElementById('cfg-pkbm-nama').value.trim(),
+    npsn: document.getElementById('cfg-pkbm-npsn').value.trim(),
+    izin_operasional: document.getElementById('cfg-pkbm-izin').value.trim(),
+    alamat: document.getElementById('cfg-pkbm-alamat').value.trim(),
+    nama_kepala: document.getElementById('cfg-pkbm-kepala').value.trim(),
+    nip_kepala: document.getElementById('cfg-pkbm-nip-kepala').value.trim() || '-',
+    kota_terbit: document.getElementById('cfg-pkbm-kota').value.trim(),
+    tanggal_cetak: document.getElementById('cfg-pkbm-tgl-cetak').value.trim(),
+    logo_url: temporaryLogoBase64 || ''
+  };
+
+  saveInstitutionProfileData(profile);
+  applyInstitutionBrand();
+  closeInstitutionModal();
+  showToast('Identitas & Logo PKBM berhasil disimpan!', 'success');
+
+  if (currentTab === 'raport') {
+    routeTo('raport');
+  }
+}
+
+function applyInstitutionBrand() {
+  const profile = getInstitutionProfile();
+  const sidebarBrand = document.getElementById('sidebar-nama-pkbm');
+  if (sidebarBrand) {
+    sidebarBrand.textContent = getCleanPkbmName(profile.nama_pkbm);
+  }
+
+  const logoBox = document.getElementById('sidebar-logo-box');
+  if (logoBox) {
+    if (profile.logo_url) {
+      logoBox.innerHTML = `<img src="${profile.logo_url}" class="w-full h-full object-contain">`;
+    } else {
+      logoBox.innerHTML = `<i data-lucide="book-open" class="w-5 h-5"></i>`;
+      lucide.createIcons({ root: logoBox });
+    }
+  }
+}
+
+// AUTHENTICATION LOGIC
+let selectedLoginRole = 'admin';
+
+function switchLoginRole(role) {
+  selectedLoginRole = role;
+  const tabAdmin = document.getElementById('tab-login-admin');
+  const tabGuru = document.getElementById('tab-login-guru');
+  const tabSiswa = document.getElementById('tab-login-siswa');
+  const label = document.getElementById('login-identifier-label');
+  const input = document.getElementById('login-identifier');
+
+  [tabAdmin, tabGuru, tabSiswa].forEach(t => {
+    t.className = "flex-1 py-2 rounded-lg text-center transition text-slate-600 hover:text-slate-900";
+  });
+
+  if (role === 'admin') {
+    tabAdmin.className = "flex-1 py-2 rounded-lg text-center transition bg-white text-blue-600 shadow-sm";
+    label.textContent = "Email Administrator PKBM";
+    input.placeholder = "admin@pkbm.sch.id";
+  } else if (role === 'guru') {
+    tabGuru.className = "flex-1 py-2 rounded-lg text-center transition bg-white text-emerald-600 shadow-sm";
+    label.textContent = "ID Guru / NIP Tutor";
+    input.placeholder = "GURU01 atau 19800412...";
+  } else {
+    tabSiswa.className = "flex-1 py-2 rounded-lg text-center transition bg-white text-purple-600 shadow-sm";
+    label.textContent = "NISN Warga Belajar";
+    input.placeholder = "0081234567";
+  }
+}
+
+function fillDemoCredentials(role) {
+  switchLoginRole(role);
+  const identifierEl = document.getElementById('login-identifier');
+  const passEl = document.getElementById('login-password');
+
+  if (role === 'admin') {
+    identifierEl.value = 'admin@pkbm.sch.id';
+    passEl.value = 'admin123';
+  } else if (role === 'guru') {
+    identifierEl.value = '19800412 200501 2 004';
+    passEl.value = 'guru123';
+  } else {
+    identifierEl.value = '0081234567';
+    passEl.value = 'siswa123';
+  }
+  showToast(`Kredensial ${role.toUpperCase()} terisi otomatis. Klik Masuk!`, 'info');
+}
+
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  const identifier = document.getElementById('login-identifier').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  const db = getDb();
+
+  // 1. ADMIN LOGIN
+  if (selectedLoginRole === 'admin') {
+    if (!IS_PREVIEW && supabaseClient) {
+      try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({
+          email: identifier,
+          password: password
+        });
+        if (error) throw error;
+        loginSuccess({
+          role: 'admin',
+          id: data.user.id,
+          name: data.user.user_metadata?.full_name || 'Administrator PKBM',
+          email: data.user.email
+        });
+        return;
+      } catch (err) {
+        showToast(err.message || 'Login Admin gagal!', 'error');
+        return;
+      }
+    } else {
+      if ((identifier.toLowerCase() === 'admin@pkbm.sch.id' || identifier.toLowerCase() === 'admin') && password === 'admin123') {
+        loginSuccess({
+          role: 'admin',
+          id: 'admin-001',
+          name: 'Administrator PKBM',
+          email: 'admin@pkbm.sch.id'
+        });
+        return;
+      }
+    }
+  }
+
+  // 2. GURU / TUTOR LOGIN
+  if (selectedLoginRole === 'guru') {
+    const guru = db.guru.find(g => (g.nip_guru.toLowerCase() === identifier.toLowerCase() || g.id === identifier || g.nama_lengkap.toLowerCase().includes(identifier.toLowerCase())) && g.password === password);
+    if (guru) {
+      loginSuccess({
+        role: 'guru',
+        id: guru.id,
+        nip_guru: guru.nip_guru,
+        name: guru.nama_lengkap,
+        mapel: guru.mata_pelajaran,
+        hp: guru.no_hp
+      });
+      return;
+    }
+  }
+
+  // 3. SISWA LOGIN
+  if (selectedLoginRole === 'siswa') {
+    const siswa = db.warga_belajar.find(s => (s.nisn === identifier || s.id === identifier) && s.password === password);
+    if (siswa) {
+      loginSuccess({
+        role: 'siswa',
+        id: siswa.id,
+        nisn: siswa.nisn,
+        name: siswa.nama_lengkap,
+        paket: siswa.paket,
+        tingkat: siswa.tingkat,
+        alamat: siswa.alamat,
+        hp: siswa.no_hp
+      });
+      return;
+    }
+  }
+
+  showToast('Identitas atau kata sandi tidak cocok! Periksa kembali.', 'error');
+}
+
+function loginSuccess(userObj) {
+  currentUser = userObj;
+  localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(currentUser));
+  document.getElementById('view-login').classList.add('hidden');
+  document.getElementById('view-app').classList.remove('hidden');
+
+  applyInstitutionBrand();
+  updateUserBadge();
+  renderNavigation();
+  routeTo('dashboard');
+  showToast(`Selamat datang, ${userObj.name}!`, 'success');
+}
+
+async function handleLogout() {
+  const confirmed = await customConfirm('Apakah Anda yakin ingin keluar dari sistem PKBM?', 'Keluar Akun');
+  if (!confirmed) return;
+
+  if (supabaseClient && currentUser?.role === 'admin') {
+    try { await supabaseClient.auth.signOut(); } catch(e){}
+  }
+
+  currentUser = null;
+  localStorage.removeItem(STORAGE_KEYS.SESSION);
+  document.getElementById('view-app').classList.add('hidden');
+  document.getElementById('view-login').classList.remove('hidden');
+  showToast('Anda telah keluar dari aplikasi.', 'info');
+}
+
+function updateUserBadge() {
+  if (!currentUser) return;
+  document.getElementById('user-display-name').textContent = currentUser.name;
+  
+  const roleLabels = {
+    admin: 'Admin Pengelola',
+    guru: `Tutor: ${currentUser.mapel || 'Guru'}`,
+    siswa: `Warga Belajar (${currentUser.paket || 'Siswa'})`
+  };
+  document.getElementById('user-role-badge').textContent = roleLabels[currentUser.role] || currentUser.role;
+  document.getElementById('user-avatar-badge').textContent = currentUser.name.charAt(0).toUpperCase();
+}
+
+// NAVIGATION STRUCTURE BY ROLE (REVISI: PRESENSI NILAI DITAMBAHKAN PADA ADMIN & GURU)
+const ROLE_MENUS = {
+  admin: [
+    { id: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard' },
+    { id: 'warga_belajar', label: 'Warga Belajar', icon: 'users' },
+    { id: 'guru', label: 'Data Guru / Tutor', icon: 'user-check' },
+    { id: 'jadwal_modul', label: 'Jadwal & Modul', icon: 'calendar-days' },
+    { id: 'presensi', label: 'Presensi Belajar', icon: 'clipboard-check' },
+    { id: 'penilaian', label: 'Presensi Nilai', icon: 'calculator' }, // Fitur Baru Tugas/UTS/UAS
+    { id: 'raport', label: 'Menu Raport Kesetaraan', icon: 'award' },
+    { id: 'administrasi', label: 'Administrasi & Kas', icon: 'wallet' }
+  ],
+  guru: [
+    { id: 'dashboard', label: 'Dashboard Tutor', icon: 'layout-dashboard' },
+    { id: 'warga_belajar', label: 'Warga Belajar', icon: 'users' },
+    { id: 'jadwal_modul', label: 'Jadwal & Modul Ajar', icon: 'calendar-days' },
+    { id: 'presensi', label: 'Presensi Pembelajaran', icon: 'clipboard-check' },
+    { id: 'penilaian', label: 'Presensi Nilai', icon: 'calculator' }, // Fitur Baru Tugas/UTS/UAS
+    { id: 'raport', label: 'Menu Raport Siswa', icon: 'award' }
+  ],
+  siswa: [
+    // Menu Raport di akun siswa ditiadakan sesuai kebijakan raport resmi lembaga
+    { id: 'dashboard', label: 'Beranda & Kartu Pelajar', icon: 'id-card' },
+    { id: 'jadwal_modul', label: 'Jadwal & Modul Saya', icon: 'book-open' },
+    { id: 'presensi', label: 'Presensi Saya', icon: 'clipboard-check' }
+  ]
+};
+
+function renderNavigation() {
+  if (!currentUser) return;
+  const menuList = ROLE_MENUS[currentUser.role] || [];
+  
+  // Desktop Sidebar
+  const sidebarNav = document.getElementById('sidebar-nav');
+  sidebarNav.innerHTML = menuList.map(item => `
+    <button onclick="routeTo('${item.id}')" id="nav-btn-${item.id}" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition ${currentTab === item.id ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}">
+      <i data-lucide="${item.icon}" class="w-4 h-4"></i>
+      <span>${item.label}</span>
+    </button>
+  `).join('');
+
+  // Mobile Bottom Nav
+  const mobileNav = document.getElementById('mobile-bottom-nav');
+  mobileNav.innerHTML = menuList.slice(0, 5).map(item => `
+    <button onclick="routeTo('${item.id}')" id="mob-nav-${item.id}" class="flex flex-col items-center justify-center p-2 rounded-xl text-[10px] font-semibold transition ${currentTab === item.id ? 'text-blue-600 font-bold' : 'text-slate-500'}">
+      <i data-lucide="${item.icon}" class="w-5 h-5 mb-0.5"></i>
+      <span class="truncate max-w-[65px]">${item.label.split(' ')[0]}</span>
+    </button>
+  `).join('');
+
+  lucide.createIcons();
+}
+
+function routeTo(tabId) {
+  // Pengamanan: Siswa tidak diizinkan membuka menu raport & penilaian
+  if (currentUser.role === 'siswa' && (tabId === 'raport' || tabId === 'penilaian')) {
+    showToast('Raport dan penilaian resmi hanya dikelola oleh Tutor/Admin.', 'warning');
+    routeTo('dashboard');
+    return;
+  }
+
+  currentTab = tabId;
+  renderNavigation();
+
+  const titleEl = document.getElementById('page-title');
+  const subtitleEl = document.getElementById('page-subtitle');
+  const contentBody = document.getElementById('content-body');
+
+  const titles = {
+    dashboard: { title: 'Dashboard Utama', sub: 'Ringkasan operasional dan kegiatan belajar PKBM' },
+    warga_belajar: { title: 'Manajemen Warga Belajar', sub: 'Data peserta didik kesetaraan Paket A, Paket B, & Paket C' },
+    guru: { title: 'Data Guru & Tutor Kesetaraan', sub: 'Manajemen tutor pengampu mata pelajaran' },
+    jadwal_modul: { title: 'Jadwal & Modul Pembelajaran', sub: 'Materi ajar, jadwal tatap muka & belajar mandiri' },
+    presensi: { title: 'Presensi & Kehadiran', sub: 'Pencatatan dan rekap kehadiran warga belajar' },
+    penilaian: { title: 'Presensi Nilai (Tugas, UTS, UAS)', sub: 'Pengisian nilai formatif, sumatif tengah & akhir semester' },
+    raport: { title: 'Menu Raport Kesetaraan (Format A4)', sub: 'Pengelolaan nilai, deskripsi capaian, dan cetak multi-halaman A4 resmi' },
+    administrasi: { title: 'Administrasi & Keuangan PKBM', sub: 'Pencatatan kas masuk, keluar, dan dana BOP operasional' }
+  };
+
+  const meta = titles[tabId] || { title: 'PKBM Mandiri', sub: 'Sistem Administrasi Kesetaraan' };
+  titleEl.textContent = meta.title;
+  subtitleEl.textContent = meta.sub;
+
+  switch(tabId) {
+    case 'dashboard':
+      contentBody.innerHTML = renderDashboardView();
+      break;
+    case 'warga_belajar':
+      contentBody.innerHTML = renderWargaBelajarView();
+      break;
+    case 'guru':
+      contentBody.innerHTML = renderGuruView();
+      break;
+    case 'jadwal_modul':
+      contentBody.innerHTML = renderJadwalModulView();
+      break;
+    case 'presensi':
+      contentBody.innerHTML = renderPresensiView();
+      break;
+    case 'penilaian':
+      contentBody.innerHTML = renderPenilaianView();
+      break;
+    case 'raport':
+      contentBody.innerHTML = renderRaportView();
+      break;
+    case 'administrasi':
+      contentBody.innerHTML = renderAdministrasiView();
+      break;
+    default:
+      contentBody.innerHTML = `<div class="p-8 text-center text-slate-500 text-sm">Halaman sedang dimuat...</div>`;
+  }
+
+  lucide.createIcons();
+}
+
+/**
+ * ==============================================================================
+ * RENDER VIEW MODULES
+ * ==============================================================================
+ */
+
+// 1. DASHBOARD VIEW
+function renderDashboardView() {
+  const db = getDb();
+  const profile = getInstitutionProfile();
+  const totalWB = db.warga_belajar.length;
+  const paketA = db.warga_belajar.filter(s => s.paket === 'Paket A').length;
+  const paketB = db.warga_belajar.filter(s => s.paket === 'Paket B').length;
+  const paketC = db.warga_belajar.filter(s => s.paket === 'Paket C').length;
+  const totalGuru = db.guru.length;
+
+  const totalMasuk = db.administrasi_kas.filter(k => k.tipe === 'Masuk').reduce((a, b) => a + Number(b.jumlah || 0), 0);
+  const totalKeluar = db.administrasi_kas.filter(k => k.tipe === 'Keluar').reduce((a, b) => a + Number(b.jumlah || 0), 0);
+  const saldoKas = totalMasuk - totalKeluar;
+
+  // JIKA LOGIN SEBAGAI SISWA
+  if (currentUser.role === 'siswa') {
+    const myData = db.warga_belajar.find(w => w.id === currentUser.id) || currentUser;
+    const myPresensi = db.presensi.filter(p => p.warga_belajar_id === myData.id);
+    const hadirCount = myPresensi.filter(p => p.status_kehadiran === 'Hadir').length;
+    const presensiPct = myPresensi.length ? Math.round((hadirCount / myPresensi.length) * 100) : 100;
+
+    return `
+      <div class="space-y-6">
+        <!-- Student Welcome Banner -->
+        <div class="glass-card rounded-3xl p-6 md:p-8 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl relative overflow-hidden">
+          <div class="relative z-10 max-w-xl">
+            <span class="px-3 py-1 rounded-full bg-white/20 text-xs font-semibold uppercase tracking-wider backdrop-blur-md">Portal Warga Belajar</span>
+            <h2 class="text-2xl md:text-3xl font-extrabold mt-3">Halo, ${myData.nama_lengkap || myData.name}!</h2>
+            <p class="text-blue-100 text-xs md:text-sm mt-2 leading-relaxed">
+              Program <strong>${myData.paket}</strong> • ${myData.tingkat || 'Pendidikan Kesetaraan'}. Pantau jadwal tutorial tatap muka, unduh modul materi, dan cek kartu pelajar digital Anda di sini.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <!-- KARTU DIGITAL PELAJAR -->
+          <div class="md:col-span-2 glass-card rounded-2xl p-6 border border-slate-200">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div class="flex items-center gap-2">
+                <div class="p-2 bg-blue-100 text-blue-700 rounded-xl">
+                  <i data-lucide="id-card" class="w-5 h-5"></i>
+                </div>
+                <h3 class="font-bold text-slate-800 text-sm md:text-base">Kartu Tanda Warga Belajar (KTS Digital)</h3>
+              </div>
+              <button onclick="window.print()" class="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+                <i data-lucide="printer" class="w-3.5 h-3.5"></i> Cetak Kartu
+              </button>
+            </div>
+
+            <div class="mt-6 p-6 rounded-2xl bg-gradient-to-br from-slate-900 to-blue-950 text-white shadow-xl relative overflow-hidden">
+              <div class="absolute -right-10 -bottom-10 w-44 h-44 bg-blue-500/20 rounded-full blur-2xl pointer-events-none"></div>
+              
+              <div class="flex justify-between items-start mb-6">
+                <div class="flex items-center gap-3">
+                  <div class="w-11 h-11 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center font-black text-blue-300 text-sm border border-white/20 overflow-hidden">
+                    ${profile.logo_url ? `<img src="${profile.logo_url}" class="w-full h-full object-contain">` : 'PKBM'}
+                  </div>
+                  <div>
+                    <h4 class="font-black text-xs md:text-sm tracking-wide leading-tight uppercase">${profile.nama_pkbm}</h4>
+                    <p class="text-[10px] text-blue-200">Izin: ${profile.izin_operasional} • NPSN: ${profile.npsn}</p>
+                  </div>
+                </div>
+                <span class="px-2.5 py-1 rounded-lg bg-blue-500/40 text-[10px] font-bold border border-blue-400/30 uppercase tracking-wider">
+                  ${myData.paket}
+                </span>
+              </div>
+
+              <div class="flex flex-col sm:flex-row gap-5 items-start sm:items-center">
+                <div class="w-20 h-24 rounded-xl bg-blue-800/60 border border-blue-400/40 flex flex-col items-center justify-center text-center p-2 shrink-0">
+                  <i data-lucide="user" class="w-10 h-10 text-blue-300 mb-1"></i>
+                  <span class="text-[9px] text-blue-200">Foto Siswa</span>
+                </div>
+                <div class="space-y-1.5 flex-1">
+                  <p class="text-[11px] text-blue-300 uppercase tracking-wider font-semibold">Nama Peserta Didik</p>
+                  <h3 class="text-base font-extrabold tracking-wide text-white">${myData.nama_lengkap || myData.name}</h3>
+                  <div class="grid grid-cols-2 gap-2 pt-1 text-xs text-blue-100">
+                    <div>
+                      <span class="text-[10px] text-blue-300 block">NISN / ID:</span>
+                      <strong class="font-mono">${myData.nisn || '0081234567'}</strong>
+                    </div>
+                    <div>
+                      <span class="text-[10px] text-blue-300 block">Tingkat / Fase:</span>
+                      <strong class="truncate block">${myData.tingkat || '-'}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-6 pt-4 border-t border-white/10 flex items-center justify-between text-[10px] text-blue-200">
+                <span>Status: <strong class="text-emerald-400">Aktif Terdaftar</strong></span>
+                <span class="font-mono tracking-widest text-slate-300">VALID TH. 2026/2027</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- STATUS KETUNTASAN & PRESENSI SISWA -->
+          <div class="space-y-6">
+            <div class="glass-card rounded-2xl p-5 border border-slate-200">
+              <h4 class="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
+                <i data-lucide="award" class="w-4 h-4 text-blue-600"></i> Ketuntasan Portofolio Modul
+              </h4>
+              <div class="p-3.5 bg-blue-50/70 border border-blue-100 rounded-xl space-y-2">
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-slate-600">Status Belajar:</span>
+                  <span class="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 font-bold text-[11px]">Memenuhi Kriteria</span>
+                </div>
+                <p class="text-[11px] text-slate-500 leading-relaxed pt-1">
+                  Lembar Raport Hasil Belajar resmi dicetak dan disahkan langsung oleh Tutor Pembimbing serta Kepala PKBM pada akhir semester.
+                </p>
+              </div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-5 border border-slate-200">
+              <h4 class="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
+                <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600"></i> Tingkat Presensi
+              </h4>
+              <div class="flex items-baseline gap-2">
+                <span class="text-3xl font-extrabold text-slate-800">${presensiPct}%</span>
+                <span class="text-xs text-slate-500">dari ${myPresensi.length} pertemuan</span>
+              </div>
+              <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-3">
+                <div class="bg-emerald-500 h-full rounded-full" style="width: ${presensiPct}%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // JIKA ADMIN ATAU GURU
+  return `
+    <div class="space-y-6">
+      <!-- Quick Metric Cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="glass-card rounded-2xl p-5 border border-slate-200/80">
+          <div class="flex items-center justify-between text-slate-500 mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider">Total Siswa</span>
+            <div class="p-2 bg-blue-50 text-blue-600 rounded-xl">
+              <i data-lucide="users" class="w-4 h-4"></i>
+            </div>
+          </div>
+          <div class="text-2xl font-black text-slate-800">${totalWB}</div>
+          <p class="text-[11px] text-slate-500 mt-1">Paket A, B, dan C aktif</p>
+        </div>
+
+        <div class="glass-card rounded-2xl p-5 border border-slate-200/80">
+          <div class="flex items-center justify-between text-slate-500 mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider">Tutor / Guru</span>
+            <div class="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+              <i data-lucide="user-check" class="w-4 h-4"></i>
+            </div>
+          </div>
+          <div class="text-2xl font-black text-slate-800">${totalGuru}</div>
+          <p class="text-[11px] text-slate-500 mt-1">Pengampu mata pelajaran</p>
+        </div>
+
+        <div class="glass-card rounded-2xl p-5 border border-slate-200/80">
+          <div class="flex items-center justify-between text-slate-500 mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider">Presensi Nilai</span>
+            <div class="p-2 bg-purple-50 text-purple-600 rounded-xl">
+              <i data-lucide="calculator" class="w-4 h-4"></i>
+            </div>
+          </div>
+          <div class="text-2xl font-black text-slate-800">${db.penilaian.length}</div>
+          <p class="text-[11px] text-slate-500 mt-1">Nilai Tugas, UTS, & UAS</p>
+        </div>
+
+        <div class="glass-card rounded-2xl p-5 border border-slate-200/80">
+          <div class="flex items-center justify-between text-slate-500 mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider">Kas Operasional</span>
+            <div class="p-2 bg-amber-50 text-amber-600 rounded-xl">
+              <i data-lucide="wallet" class="w-4 h-4"></i>
+            </div>
+          </div>
+          <div class="text-lg font-black text-slate-800 truncate">${formatRupiah(saldoKas)}</div>
+          <p class="text-[11px] text-emerald-600 font-semibold mt-1">Saldo kas aktif</p>
+        </div>
+      </div>
+
+      <!-- Detail Per Paket Distribution Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div class="glass-card rounded-2xl p-5 border-l-4 border-l-blue-500 border border-slate-200/70">
+          <div class="flex justify-between items-start mb-3">
+            <div>
+              <span class="text-[11px] font-bold text-blue-600 uppercase">Setara SD</span>
+              <h3 class="text-base font-extrabold text-slate-800">Paket A</h3>
+            </div>
+            <span class="px-2.5 py-1 bg-blue-100 text-blue-700 font-black rounded-xl text-sm">${paketA} Siswa</span>
+          </div>
+          <p class="text-xs text-slate-500 leading-relaxed">Fase Literasi Numerasi Dasar & Pemberdayaan Mandiri.</p>
+          <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span class="text-slate-500">Tingkat 1 - 2</span>
+            <button onclick="filterWargaBelajarByPaket('Paket A')" class="text-blue-600 font-semibold hover:underline">Kelola Siswa →</button>
+          </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-5 border-l-4 border-l-emerald-500 border border-slate-200/70">
+          <div class="flex justify-between items-start mb-3">
+            <div>
+              <span class="text-[11px] font-bold text-emerald-600 uppercase">Setara SMP</span>
+              <h3 class="text-base font-extrabold text-slate-800">Paket B</h3>
+            </div>
+            <span class="px-2.5 py-1 bg-emerald-100 text-emerald-700 font-black rounded-xl text-sm">${paketB} Siswa</span>
+          </div>
+          <p class="text-xs text-slate-500 leading-relaxed">Fase Penguatan Konseptual & Keterampilan Praktis Terapan.</p>
+          <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span class="text-slate-500">Tingkat 3 - 4</span>
+            <button onclick="filterWargaBelajarByPaket('Paket B')" class="text-emerald-600 font-semibold hover:underline">Kelola Siswa →</button>
+          </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-5 border-l-4 border-l-purple-500 border border-slate-200/70">
+          <div class="flex justify-between items-start mb-3">
+            <div>
+              <span class="text-[11px] font-bold text-purple-600 uppercase">Setara SMA</span>
+              <h3 class="text-base font-extrabold text-slate-800">Paket C</h3>
+            </div>
+            <span class="px-2.5 py-1 bg-purple-100 text-purple-700 font-black rounded-xl text-sm">${paketC} Siswa</span>
+          </div>
+          <p class="text-xs text-slate-500 leading-relaxed">Fase Pendalaman Akademik, Vokasional, & Uji Kelulusan Kesetaraan.</p>
+          <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span class="text-slate-500">Tingkat 5 - 6 (IPA/IPS)</span>
+            <button onclick="filterWargaBelajarByPaket('Paket C')" class="text-purple-600 font-semibold hover:underline">Kelola Siswa →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action: Presensi Nilai & Raport A4 -->
+      <div class="glass-card rounded-2xl p-6 border border-slate-200/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <h3 class="font-bold text-slate-800 text-sm md:text-base flex items-center gap-2">
+            <i data-lucide="calculator" class="w-5 h-5 text-blue-600"></i> Presensi Nilai & Cetak Raport A4
+          </h3>
+          <p class="text-xs text-slate-500 mt-1">
+            Input nilai Tugas, UTS, dan UAS lalu sinkronkan otomatis ke lembar Raport resmi berstandar A4 dengan KOP rata tengah dan tanda tangan Kepala PKBM.
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="routeTo('penilaian')" class="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-xl text-xs transition flex items-center gap-1.5">
+            <i data-lucide="calculator" class="w-4 h-4"></i> Presensi Nilai
+          </button>
+          <button onclick="routeTo('raport')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs transition shadow-md shadow-blue-500/20 flex items-center gap-1.5">
+            <i data-lucide="award" class="w-4 h-4"></i> Buka Menu Raport
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// 2. WARGA BELAJAR VIEW
+let selectedPaketFilter = 'Semua';
+
+function filterWargaBelajarByPaket(paket) {
+  selectedPaketFilter = paket;
+  routeTo('warga_belajar');
+}
+
+function renderWargaBelajarView() {
+  const db = getDb();
+  let list = db.warga_belajar;
+  if (selectedPaketFilter !== 'Semua') {
+    list = list.filter(w => w.paket === selectedPaketFilter);
+  }
+
+  return `
+    <div class="space-y-5">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div class="flex rounded-xl bg-slate-200/70 p-1 text-xs font-semibold text-slate-600">
+          ${['Semua', 'Paket A', 'Paket B', 'Paket C'].map(pkt => `
+            <button onclick="selectedPaketFilter='${pkt}'; routeTo('warga_belajar');" class="px-3.5 py-1.5 rounded-lg transition ${selectedPaketFilter === pkt ? 'bg-white text-blue-600 shadow-sm font-bold' : 'hover:text-slate-900'}">
+              ${pkt}
+            </button>
+          `).join('')}
+        </div>
+
+        ${currentUser.role === 'admin' ? `
+          <button onclick="openModalAddWargaBelajar()" class="px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-xl text-xs hover:bg-blue-700 transition shadow-md shadow-blue-500/20 flex items-center justify-center gap-2">
+            <i data-lucide="user-plus" class="w-4 h-4"></i> Tambah Warga Belajar
+          </button>
+        ` : ''}
+      </div>
+
+      <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-semibold">
+                <th class="p-3.5">NISN / ID</th>
+                <th class="p-3.5">Nama Peserta</th>
+                <th class="p-3.5">Program Paket</th>
+                <th class="p-3.5">Tingkat / Fase</th>
+                <th class="p-3.5">No. HP</th>
+                <th class="p-3.5">Status</th>
+                <th class="p-3.5 text-center">Aksi Raport & Data</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${list.length ? list.map(wb => `
+                <tr class="hover:bg-blue-50/40 transition">
+                  <td class="p-3.5 font-mono font-semibold text-slate-700">${wb.nisn}</td>
+                  <td class="p-3.5 font-bold text-slate-900">${wb.nama_lengkap}</td>
+                  <td class="p-3.5">
+                    <span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                      wb.paket === 'Paket A' ? 'bg-blue-100 text-blue-700' :
+                      wb.paket === 'Paket B' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'
+                    }">${wb.paket}</span>
+                  </td>
+                  <td class="p-3.5 text-slate-600">${wb.tingkat}</td>
+                  <td class="p-3.5 text-slate-600">${wb.no_hp || '-'}</td>
+                  <td class="p-3.5">
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      ${wb.status || 'Aktif'}
+                    </span>
+                  </td>
+                  <td class="p-3.5 text-center">
+                    <div class="flex items-center justify-center gap-1.5">
+                      <button onclick="openRaportForStudent('${wb.id}')" title="Buka Raport A4" class="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-semibold text-[11px] flex items-center gap-1">
+                        <i data-lucide="award" class="w-3.5 h-3.5"></i> Raport
+                      </button>
+                      ${currentUser.role === 'admin' ? `
+                        <button onclick="openModalEditWargaBelajar('${wb.id}')" title="Edit Data" class="p-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition">
+                          <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="deleteWargaBelajar('${wb.id}')" title="Hapus Data" class="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition">
+                          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                      ` : ''}
+                    </div>
+                  </td>
+                </tr>
+              `).join('') : `
+                <tr>
+                  <td colspan="7" class="p-8 text-center text-slate-400">Belum ada data warga belajar.</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openModalAddWargaBelajar() {
+  const content = `
+    <form onsubmit="saveWargaBelajar(event)" class="space-y-3.5">
+      <input type="hidden" id="form-wb-id" value="">
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">NISN Peserta</label>
+        <input type="text" id="form-wb-nisn" required placeholder="Contoh: 0081234567" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap</label>
+        <input type="text" id="form-wb-nama" required placeholder="Nama lengkap warga belajar" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Program Paket</label>
+          <select id="form-wb-paket" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+            <option value="Paket A">Paket A (Setara SD)</option>
+            <option value="Paket B">Paket B (Setara SMP)</option>
+            <option value="Paket C">Paket C (Setara SMA)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Tingkat / Fase</label>
+          <input type="text" id="form-wb-tingkat" placeholder="Contoh: Tingkat 4 (Kelas 9)" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Jenis Kelamin</label>
+          <select id="form-wb-gender" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+            <option value="L">Laki-laki</option>
+            <option value="P">Perempuan</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Nomor WhatsApp / HP</label>
+          <input type="text" id="form-wb-hp" placeholder="08xxxxxxxxxx" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Alamat Domisili</label>
+        <textarea id="form-wb-alamat" rows="2" placeholder="Alamat lengkap" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200"></textarea>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Password Login Siswa</label>
+        <input type="text" id="form-wb-pass" value="siswa123" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+      </div>
+      <div class="mt-5 pt-3 border-t border-slate-100 flex gap-2 justify-end">
+        <button type="button" onclick="closeFormModal()" class="px-4 py-2 text-xs font-medium border border-slate-200 rounded-xl hover:bg-slate-50">Batal</button>
+        <button type="submit" class="px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700">Simpan Data</button>
+      </div>
+    </form>
+  `;
+  openFormModal('Tambah Warga Belajar Baru', content);
+}
+
+function openModalEditWargaBelajar(id) {
+  const db = getDb();
+  const wb = db.warga_belajar.find(w => w.id === id);
+  if (!wb) return;
+
+  openModalAddWargaBelajar();
+  document.getElementById('modal-title').innerHTML = `<span>Edit Warga Belajar</span>`;
+  document.getElementById('form-wb-id').value = wb.id;
+  document.getElementById('form-wb-nisn').value = wb.nisn;
+  document.getElementById('form-wb-nama').value = wb.nama_lengkap;
+  document.getElementById('form-wb-paket').value = wb.paket;
+  document.getElementById('form-wb-tingkat').value = wb.tingkat || '';
+  document.getElementById('form-wb-gender').value = wb.jenis_kelamin || 'L';
+  document.getElementById('form-wb-hp').value = wb.no_hp || '';
+  document.getElementById('form-wb-alamat').value = wb.alamat || '';
+  document.getElementById('form-wb-pass').value = wb.password || 'siswa123';
+}
+
+function saveWargaBelajar(e) {
+  e.preventDefault();
+  const db = getDb();
+  const id = document.getElementById('form-wb-id').value;
+  const nisn = document.getElementById('form-wb-nisn').value.trim();
+  const nama = document.getElementById('form-wb-nama').value.trim();
+  const paket = document.getElementById('form-wb-paket').value;
+  const tingkat = document.getElementById('form-wb-tingkat').value.trim();
+  const gender = document.getElementById('form-wb-gender').value;
+  const hp = document.getElementById('form-wb-hp').value.trim();
+  const alamat = document.getElementById('form-wb-alamat').value.trim();
+  const pass = document.getElementById('form-wb-pass').value.trim();
+
+  if (id) {
+    const idx = db.warga_belajar.findIndex(w => w.id === id);
+    if (idx !== -1) {
+      db.warga_belajar[idx] = { ...db.warga_belajar[idx], nisn, nama_lengkap: nama, paket, tingkat, jenis_kelamin: gender, no_hp: hp, alamat, password: pass };
+    }
+  } else {
+    db.warga_belajar.push({
+      id: 'wb-' + Date.now(),
+      nisn,
+      nama_lengkap: nama,
+      paket,
+      tingkat: tingkat || `${paket} Mandiri`,
+      jenis_kelamin: gender,
+      no_hp: hp,
+      alamat,
+      status: 'Aktif',
+      password: pass
+    });
+  }
+
+  saveDb(db);
+  closeFormModal();
+  routeTo('warga_belajar');
+  showToast('Data warga belajar berhasil disimpan!', 'success');
+}
+
+async function deleteWargaBelajar(id) {
+  const confirmed = await customConfirm('Hapus data warga belajar ini secara permanen?', 'Hapus Siswa');
+  if (!confirmed) return;
+
+  const db = getDb();
+  db.warga_belajar = db.warga_belajar.filter(w => w.id !== id);
+  db.raport = db.raport.filter(r => r.warga_belajar_id !== id);
+  db.presensi = db.presensi.filter(p => p.warga_belajar_id !== id);
+  db.penilaian = db.penilaian.filter(n => n.warga_belajar_id !== id);
+  saveDb(db);
+  routeTo('warga_belajar');
+  showToast('Warga belajar telah dihapus.', 'info');
+}
+
+// 3. GURU & TUTOR VIEW
+function renderGuruView() {
+  const db = getDb();
+  return `
+    <div class="space-y-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-bold text-slate-800">Daftar Tutor Pengampu & Wali Kelas</h3>
+          <p class="text-xs text-slate-500">Bagi tutor yang tidak memiliki NIP, sistem akan otomatis mencantumkan tanda strip (-).</p>
+        </div>
+        ${currentUser.role === 'admin' ? `
+          <button onclick="openModalAddGuru()" class="px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-xl text-xs hover:bg-blue-700 transition shadow-md shadow-blue-500/20 flex items-center gap-2">
+            <i data-lucide="user-plus" class="w-4 h-4"></i> Tambah Guru / Tutor
+          </button>
+        ` : ''}
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        ${db.guru.map(g => `
+          <div class="glass-card rounded-2xl p-5 border border-slate-200/80 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-start mb-3">
+                <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
+                  ${g.nama_lengkap.charAt(0)}
+                </div>
+                <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold">
+                  ${g.nip_guru && g.nip_guru !== '-' ? 'NIP: ' + g.nip_guru : 'NIP: -'}
+                </span>
+              </div>
+              <h4 class="font-extrabold text-sm text-slate-900">${g.nama_lengkap}</h4>
+              <p class="text-xs text-blue-600 font-medium mt-0.5">${g.mata_pelajaran}</p>
+              
+              <div class="mt-4 pt-3 border-t border-slate-100 space-y-1 text-xs text-slate-600">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="phone" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>${g.no_hp || '-'}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <i data-lucide="key" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>Password: <code class="bg-slate-100 px-1 py-0.5 rounded text-[10px]">${g.password}</code></span>
+                </div>
+              </div>
+            </div>
+
+            ${currentUser.role === 'admin' ? `
+              <div class="mt-5 pt-3 border-t border-slate-100 flex gap-2 justify-end">
+                <button onclick="openModalEditGuru('${g.id}')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition">Edit</button>
+                <button onclick="deleteGuru('${g.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-semibold transition">Hapus</button>
+              </div>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function openModalAddGuru() {
+  const content = `
+    <form onsubmit="saveGuru(event)" class="space-y-3.5">
+      <input type="hidden" id="form-gr-id" value="">
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">NIP Guru (Ketik '-' jika tidak memiliki NIP)</label>
+        <input type="text" id="form-gr-nip" required placeholder="Contoh: 19800412... atau '-'" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
+        <input type="text" id="form-gr-nama" required placeholder="Nama lengkap guru" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Mata Pelajaran yang Diampu</label>
+        <input type="text" id="form-gr-mapel" required placeholder="Contoh: Bahasa Indonesia & PPKn Kesetaraan" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Nomor WhatsApp / HP</label>
+        <input type="text" id="form-gr-hp" placeholder="08xxxxxxxxxx" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Password Login Tutor</label>
+        <input type="text" id="form-gr-pass" value="guru123" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+      </div>
+      <div class="mt-5 pt-3 border-t border-slate-100 flex gap-2 justify-end">
+        <button type="button" onclick="closeFormModal()" class="px-4 py-2 text-xs font-medium border border-slate-200 rounded-xl hover:bg-slate-50">Batal</button>
+        <button type="submit" class="px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700">Simpan Guru</button>
+      </div>
+    </form>
+  `;
+  openFormModal('Tambah Data Tutor Baru', content);
+}
+
+function openModalEditGuru(id) {
+  const db = getDb();
+  const g = db.guru.find(gr => gr.id === id);
+  if (!g) return;
+
+  openModalAddGuru();
+  document.getElementById('modal-title').innerHTML = `<span>Edit Guru / Tutor</span>`;
+  document.getElementById('form-gr-id').value = g.id;
+  document.getElementById('form-gr-nip').value = g.nip_guru || '-';
+  document.getElementById('form-gr-nama').value = g.nama_lengkap;
+  document.getElementById('form-gr-mapel').value = g.mata_pelajaran;
+  document.getElementById('form-gr-hp').value = g.no_hp || '';
+  document.getElementById('form-gr-pass').value = g.password || 'guru123';
+}
+
+function saveGuru(e) {
+  e.preventDefault();
+  const db = getDb();
+  const id = document.getElementById('form-gr-id').value;
+  const nip = document.getElementById('form-gr-nip').value.trim() || '-';
+  const nama = document.getElementById('form-gr-nama').value.trim();
+  const mapel = document.getElementById('form-gr-mapel').value.trim();
+  const hp = document.getElementById('form-gr-hp').value.trim();
+  const pass = document.getElementById('form-gr-pass').value.trim();
+
+  if (id) {
+    const idx = db.guru.findIndex(g => g.id === id);
+    if (idx !== -1) {
+      db.guru[idx] = { ...db.guru[idx], nip_guru: nip, nama_lengkap: nama, mata_pelajaran: mapel, no_hp: hp, password: pass };
+    }
+  } else {
+    db.guru.push({
+      id: 'gr-' + Date.now(),
+      nip_guru: nip,
+      nama_lengkap: nama,
+      mata_pelajaran: mapel,
+      no_hp: hp,
+      password: pass
+    });
+  }
+
+  saveDb(db);
+  closeFormModal();
+  routeTo('guru');
+  showToast('Data guru/tutor berhasil disimpan!', 'success');
+}
+
+async function deleteGuru(id) {
+  const confirmed = await customConfirm('Hapus data tutor ini?', 'Hapus Tutor');
+  if (!confirmed) return;
+
+  const db = getDb();
+  db.guru = db.guru.filter(g => g.id !== id);
+  saveDb(db);
+  routeTo('guru');
+  showToast('Tutor telah dihapus.', 'info');
+}
+
+// 4. JADWAL & MODUL VIEW
+function renderJadwalModulView() {
+  const db = getDb();
+  let list = db.jadwal_modul;
+
+  if (currentUser.role === 'siswa' && currentUser.paket) {
+    list = list.filter(j => j.paket === currentUser.paket);
+  }
+
+  return `
+    <div class="space-y-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-bold text-slate-800">Materi & Jadwal Tutorial Kesetaraan</h3>
+          <p class="text-xs text-slate-500">Mendukung belajar mandiri, tatap muka, dan modul resmi Kemdikbudristek.</p>
+        </div>
+        ${currentUser.role !== 'siswa' ? `
+          <button onclick="openModalAddJadwal()" class="px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-xl text-xs hover:bg-blue-700 transition shadow-md shadow-blue-500/20 flex items-center gap-2">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i> Tambah Jadwal/Modul
+          </button>
+        ` : ''}
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        ${list.map(j => `
+          <div class="glass-card rounded-2xl p-5 border border-slate-200/80 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${
+                  j.paket === 'Paket A' ? 'bg-blue-100 text-blue-700' :
+                  j.paket === 'Paket B' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'
+                }">${j.paket}</span>
+                <span class="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                  <i data-lucide="clock" class="w-3.5 h-3.5"></i> ${j.hari_waktu}
+                </span>
+              </div>
+              <h4 class="font-extrabold text-base text-slate-900">${j.mata_pelajaran}</h4>
+              <p class="text-xs text-slate-600 mt-1 flex items-center gap-1.5">
+                <i data-lucide="user" class="w-3.5 h-3.5 text-blue-600"></i>
+                <span>Tutor: <strong>${j.tutor_nama || '-'}</strong></span>
+              </p>
+              <div class="p-3 bg-slate-50 rounded-xl mt-3 text-xs text-slate-600">
+                ${j.keterangan || 'Materi pembelajaran modul kesetaraan.'}
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <a href="${j.link_modul || '#'}" target="_blank" class="px-3.5 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-bold flex items-center gap-1.5 transition">
+                <i data-lucide="download-cloud" class="w-4 h-4"></i> Unduh Modul Ajar
+              </a>
+              ${currentUser.role !== 'siswa' ? `
+                <div class="flex gap-1.5">
+                  <button onclick="openModalEditJadwal('${j.id}')" class="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition">
+                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                  </button>
+                  <button onclick="deleteJadwal('${j.id}')" class="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function openModalAddJadwal() {
+  const db = getDb();
+  const tutorOptions = db.guru.map(g => `<option value="${g.nama_lengkap}">${g.nama_lengkap} (${g.mata_pelajaran})</option>`).join('');
+
+  const content = `
+    <form onsubmit="saveJadwal(event)" class="space-y-3.5">
+      <input type="hidden" id="form-jm-id" value="">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Program Paket</label>
+          <select id="form-jm-paket" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+            <option value="Paket A">Paket A (Setara SD)</option>
+            <option value="Paket B">Paket B (Setara SMP)</option>
+            <option value="Paket C">Paket C (Setara SMA)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Mata Pelajaran</label>
+          <input type="text" id="form-jm-mapel" required placeholder="Contoh: Bahasa Indonesia" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Tutor Pengampu</label>
+        <select id="form-jm-tutor" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+          ${tutorOptions}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Hari & Waktu Belajar</label>
+        <input type="text" id="form-jm-waktu" required placeholder="Contoh: Sabtu, 09:00 - 11:00 WIB" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Tautan / Link Modul (PDF/Drive)</label>
+        <input type="url" id="form-jm-link" placeholder="https://..." class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Deskripsi / Modul Capaian</label>
+        <textarea id="form-jm-ket" rows="2" placeholder="Catatan modul ajar" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200"></textarea>
+      </div>
+      <div class="mt-5 pt-3 border-t border-slate-100 flex gap-2 justify-end">
+        <button type="button" onclick="closeFormModal()" class="px-4 py-2 text-xs font-medium border border-slate-200 rounded-xl hover:bg-slate-50">Batal</button>
+        <button type="submit" class="px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700">Simpan Jadwal</button>
+      </div>
+    </form>
+  `;
+  openFormModal('Tambah Jadwal & Modul', content);
+}
+
+function openModalEditJadwal(id) {
+  const db = getDb();
+  const j = db.jadwal_modul.find(jm => jm.id === id);
+  if (!j) return;
+
+  openModalAddJadwal();
+  document.getElementById('modal-title').innerHTML = `<span>Edit Jadwal / Modul</span>`;
+  document.getElementById('form-jm-id').value = j.id;
+  document.getElementById('form-jm-paket').value = j.paket;
+  document.getElementById('form-jm-mapel').value = j.mata_pelajaran;
+  document.getElementById('form-jm-tutor').value = j.tutor_nama;
+  document.getElementById('form-jm-waktu').value = j.hari_waktu;
+  document.getElementById('form-jm-link').value = j.link_modul || '';
+  document.getElementById('form-jm-ket').value = j.keterangan || '';
+}
+
+function saveJadwal(e) {
+  e.preventDefault();
+  const db = getDb();
+  const id = document.getElementById('form-jm-id').value;
+  const paket = document.getElementById('form-jm-paket').value;
+  const mapel = document.getElementById('form-jm-mapel').value.trim();
+  const tutor = document.getElementById('form-jm-tutor').value;
+  const waktu = document.getElementById('form-jm-waktu').value.trim();
+  const link = document.getElementById('form-jm-link').value.trim();
+  const ket = document.getElementById('form-jm-ket').value.trim();
+
+  if (id) {
+    const idx = db.jadwal_modul.findIndex(j => j.id === id);
+    if (idx !== -1) {
+      db.jadwal_modul[idx] = { ...db.jadwal_modul[idx], paket, mata_pelajaran: mapel, tutor_nama: tutor, hari_waktu: waktu, link_modul: link, keterangan: ket };
+    }
+  } else {
+    db.jadwal_modul.push({
+      id: 'jm-' + Date.now(),
+      paket,
+      mata_pelajaran: mapel,
+      tutor_nama: tutor,
+      hari_waktu: waktu,
+      link_modul: link || 'https://repositori.kemdikbud.go.id',
+      keterangan: ket
+    });
+  }
+
+  saveDb(db);
+  closeFormModal();
+  routeTo('jadwal_modul');
+  showToast('Jadwal & Modul berhasil disimpan!', 'success');
+}
+
+async function deleteJadwal(id) {
+  const confirmed = await customConfirm('Hapus jadwal ini?', 'Hapus Jadwal');
+  if (!confirmed) return;
+
+  const db = getDb();
+  db.jadwal_modul = db.jadwal_modul.filter(j => j.id !== id);
+  saveDb(db);
+  routeTo('jadwal_modul');
+  showToast('Jadwal telah dihapus.', 'info');
+}
+
+// 5. PRESENSI VIEW
+let selectedPresensiPaket = 'Paket A';
+let presensiViewMode = 'input'; // 'input' | 'rekap'
+let selectedPresensiMonth = '2026-10'; // format YYYY-MM
+
+function renderPresensiView() {
+  const db = getDb();
+
+  if (currentUser.role === 'siswa') {
+    const myLogs = db.presensi.filter(p => p.warga_belajar_id === currentUser.id);
+    return `
+      <div class="space-y-5 max-w-4xl">
+        <div class="glass-card rounded-2xl p-6 border border-slate-200">
+          <h3 class="font-extrabold text-slate-800 text-base mb-1">Riwayat Kehadiran Belajar Mandiri & Tutorial</h3>
+          <p class="text-xs text-slate-500 mb-4">Catatan kehadiran kegiatan tatap muka dan mandiri.</p>
+          
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                  <th class="p-3">Tanggal</th>
+                  <th class="p-3">Program</th>
+                  <th class="p-3">Status</th>
+                  <th class="p-3">Keterangan</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${myLogs.length ? myLogs.map(log => `
+                  <tr>
+                    <td class="p-3 font-semibold text-slate-700">${log.tanggal}</td>
+                    <td class="p-3">${log.paket}</td>
+                    <td class="p-3">
+                      <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        log.status_kehadiran === 'Hadir' ? 'bg-emerald-100 text-emerald-800' :
+                        log.status_kehadiran === 'Izin' ? 'bg-blue-100 text-blue-800' :
+                        log.status_kehadiran === 'Sakit' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
+                      }">${log.status_kehadiran}</span>
+                    </td>
+                    <td class="p-3 text-slate-500">${log.keterangan || '-'}</td>
+                  </tr>
+                `).join('') : `
+                  <tr><td colspan="4" class="p-6 text-center text-slate-400">Belum ada riwayat kehadiran tercatat.</td></tr>
+                `}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const students = db.warga_belajar.filter(w => w.paket === selectedPresensiPaket);
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  return `
+    <div class="space-y-5">
+      <!-- Mode Switch: Input Harian vs Rekap Bulanan -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex rounded-xl bg-slate-200/80 p-1 text-xs font-semibold text-slate-700">
+          <button onclick="presensiViewMode='input'; routeTo('presensi');" class="px-3.5 py-1.5 rounded-lg transition ${presensiViewMode === 'input' ? 'bg-white text-blue-600 shadow-sm font-bold' : 'hover:text-slate-900'}">
+            📝 Input Presensi Harian
+          </button>
+          <button onclick="presensiViewMode='rekap'; routeTo('presensi');" class="px-3.5 py-1.5 rounded-lg transition ${presensiViewMode === 'rekap' ? 'bg-white text-blue-600 shadow-sm font-bold' : 'hover:text-slate-900'}">
+            📊 Rekap Bulanan & Unduh
+          </button>
+        </div>
+
+        <div class="flex rounded-xl bg-slate-200/80 p-1 text-xs font-semibold text-slate-700">
+          ${['Paket A', 'Paket B', 'Paket C'].map(pkt => `
+            <button onclick="selectedPresensiPaket='${pkt}'; routeTo('presensi');" class="px-3 py-1.5 rounded-lg transition ${selectedPresensiPaket === pkt ? 'bg-white text-blue-600 shadow-sm font-bold' : 'hover:text-slate-900'}">
+              ${pkt}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      ${presensiViewMode === 'input' ? `
+        <!-- MODE INPUT HARIAN -->
+        <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden">
+          <div class="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                Presensi Harian ${selectedPresensiPaket} (${students.length} Siswa)
+              </h4>
+              <span class="text-[11px] text-slate-500">Pilih status kehadiran lalu klik tombol Simpan</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="date" id="presensi-date-input" value="${todayStr}" class="px-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-white font-medium">
+              <button onclick="saveBatchPresensi()" class="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition shadow-md shadow-blue-500/20">
+                Simpan Presensi Hari Ini
+              </button>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-semibold">
+                  <th class="p-3.5">NISN</th>
+                  <th class="p-3.5">Nama Peserta Didik</th>
+                  <th class="p-3.5">Status Kehadiran</th>
+                  <th class="p-3.5">Keterangan / Catatan</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${students.length ? students.map(st => `
+                  <tr class="hover:bg-slate-50/60 transition">
+                    <td class="p-3.5 font-mono font-medium text-slate-700">${st.nisn}</td>
+                    <td class="p-3.5 font-bold text-slate-900">${st.nama_lengkap}</td>
+                    <td class="p-3.5">
+                      <div class="flex items-center gap-2" id="pres-status-group-${st.id}">
+                        <label class="flex items-center gap-1 cursor-pointer">
+                          <input type="radio" name="status-${st.id}" value="Hadir" checked class="text-blue-600">
+                          <span class="text-emerald-700 font-semibold">Hadir</span>
+                        </label>
+                        <label class="flex items-center gap-1 cursor-pointer ml-2">
+                          <input type="radio" name="status-${st.id}" value="Izin" class="text-blue-600">
+                          <span class="text-blue-600 font-semibold">Izin</span>
+                        </label>
+                        <label class="flex items-center gap-1 cursor-pointer ml-2">
+                          <input type="radio" name="status-${st.id}" value="Sakit" class="text-blue-600">
+                          <span class="text-amber-600 font-semibold">Sakit</span>
+                        </label>
+                        <label class="flex items-center gap-1 cursor-pointer ml-2">
+                          <input type="radio" name="status-${st.id}" value="Alfa" class="text-blue-600">
+                          <span class="text-rose-600 font-semibold">Alfa</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td class="p-3.5">
+                      <input type="text" id="pres-ket-${st.id}" placeholder="Catatan pertemuan" class="w-full max-w-xs px-3 py-1 text-xs rounded-lg border border-slate-200">
+                    </td>
+                  </tr>
+                `).join('') : `
+                  <tr><td colspan="4" class="p-8 text-center text-slate-400">Belum ada siswa pada program ${selectedPresensiPaket}.</td></tr>
+                `}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : `
+        <!-- MODE REKAP BULANAN DENGAN DOWNLOAD PDF, WORD, & EXCEL -->
+        <div class="space-y-4">
+          <div class="glass-card rounded-2xl p-4 border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <label class="text-xs font-bold text-slate-700">Pilih Bulan & Tahun:</label>
+              <input type="month" value="${selectedPresensiMonth}" onchange="selectedPresensiMonth=this.value; routeTo('presensi');" class="px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+            </div>
+            
+            <div class="flex flex-wrap items-center gap-2">
+              <button onclick="exportPresensiToPdf()" class="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+                <i data-lucide="printer" class="w-4 h-4"></i> Unduh / Cetak PDF
+              </button>
+              <button onclick="exportPresensiToWord()" class="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+                <i data-lucide="file-text" class="w-4 h-4"></i> Unduh Word (.doc)
+              </button>
+              <button onclick="exportPresensiToExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Unduh Excel (.xls)
+              </button>
+            </div>
+          </div>
+
+          <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+            <div class="p-4 border-b border-slate-100 bg-slate-50/50">
+              <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                Tabel Rekap Kehadiran: ${selectedPresensiPaket} (Bulan ${selectedPresensiMonth})
+              </h4>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase text-[11px]">
+                    <th class="p-3 text-center w-10">No</th>
+                    <th class="p-3">NISN</th>
+                    <th class="p-3">Nama Warga Belajar</th>
+                    <th class="p-3 text-center">Hadir (H)</th>
+                    <th class="p-3 text-center">Izin (I)</th>
+                    <th class="p-3 text-center">Sakit (S)</th>
+                    <th class="p-3 text-center">Alfa (A)</th>
+                    <th class="p-3 text-center">Total Pertemuan</th>
+                    <th class="p-3 text-center">Persentase</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${students.length ? students.map((st, idx) => {
+                    const logs = db.presensi.filter(p => p.warga_belajar_id === st.id && p.tanggal.startsWith(selectedPresensiMonth));
+                    const h = logs.filter(p => p.status_kehadiran === 'Hadir').length;
+                    const i = logs.filter(p => p.status_kehadiran === 'Izin').length;
+                    const s = logs.filter(p => p.status_kehadiran === 'Sakit').length;
+                    const a = logs.filter(p => p.status_kehadiran === 'Alfa').length;
+                    const total = logs.length;
+                    const pct = total > 0 ? Math.round((h / total) * 100) : 100;
+
+                    return `
+                      <tr class="hover:bg-slate-50">
+                        <td class="p-3 text-center font-medium text-slate-500">${idx + 1}</td>
+                        <td class="p-3 font-mono font-medium">${st.nisn}</td>
+                        <td class="p-3 font-bold text-slate-900">${st.nama_lengkap}</td>
+                        <td class="p-3 text-center font-bold text-emerald-700">${h}</td>
+                        <td class="p-3 text-center text-blue-700">${i}</td>
+                        <td class="p-3 text-center text-amber-700">${s}</td>
+                        <td class="p-3 text-center text-rose-700">${a}</td>
+                        <td class="p-3 text-center font-semibold text-slate-700">${total}</td>
+                        <td class="p-3 text-center">
+                          <span class="px-2 py-0.5 rounded-full text-[11px] font-black ${pct >= 80 ? 'bg-emerald-100 text-emerald-800' : pct >= 60 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'}">
+                            ${pct}%
+                          </span>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('') : `
+                    <tr><td colspan="9" class="p-8 text-center text-slate-400">Belum ada siswa terdaftar pada ${selectedPresensiPaket}.</td></tr>
+                  `}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function saveBatchPresensi() {
+  const db = getDb();
+  const dateVal = document.getElementById('presensi-date-input').value;
+  const students = db.warga_belajar.filter(w => w.paket === selectedPresensiPaket);
+
+  students.forEach(st => {
+    const radio = document.querySelector(`input[name="status-${st.id}"]:checked`);
+    const statusVal = radio ? radio.value : 'Hadir';
+    const ketVal = document.getElementById(`pres-ket-${st.id}`)?.value.trim() || 'Tutorial tatap muka';
+
+    db.presensi.push({
+      id: 'pr-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      warga_belajar_id: st.id,
+      tanggal: dateVal,
+      paket: selectedPresensiPaket,
+      status_kehadiran: statusVal,
+      keterangan: ketVal
+    });
+  });
+
+  saveDb(db);
+  showToast(`Presensi ${selectedPresensiPaket} tanggal ${dateVal} berhasil disimpan!`, 'success');
+}
+
+// ==============================================================================
+// 6. FITUR BARU: MENU PRESENSI NILAI (TUGAS, UTS, DAN UAS)
+// ==============================================================================
+let selectedNilaiPaket = 'Paket A';
+let selectedNilaiJenis = 'Tugas';
+let selectedNilaiMapel = 'Bahasa Indonesia';
+let penilaianViewMode = 'input'; // 'input' | 'rekap'
+let selectedNilaiMonth = '2026-10'; // YYYY-MM
+
+const MAPEL_BY_PAKET = {
+  'Paket A': [
+    'Bahasa Indonesia',
+    'Pendidikan Agama & Budi Pekerti',
+    'Pendidikan Pancasila & Kewarganegaraan',
+    'Matematika Kesetaraan',
+    'Ilmu Pengetahuan Alam dan Sosial (IPAS)',
+    'Pemberdayaan & Keterampilan'
+  ],
+  'Paket B': [
+    'Matematika Terapan',
+    'Bahasa Indonesia',
+    'Pendidikan Agama & Budi Pekerti',
+    'Bahasa Inggris Terapan',
+    'IPA & IPS Terpadu',
+    'Keterampilan Wirausaha Kuliner'
+  ],
+  'Paket C': [
+    'Sosiologi & Geografi',
+    'Bahasa Indonesia',
+    'Pendidikan Agama & Budi Pekerti',
+    'Bahasa Inggris',
+    'Ekonomi Kesetaraan',
+    'Keterampilan Terapan Komputer'
+  ]
+};
+
+function renderPenilaianView() {
+  const db = getDb();
+  const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
+  const mapelOptions = MAPEL_BY_PAKET[selectedNilaiPaket] || ['Bahasa Indonesia', 'Matematika'];
+
+  if (!mapelOptions.includes(selectedNilaiMapel)) {
+    selectedNilaiMapel = mapelOptions[0];
+  }
+
+  return `
+    <div class="space-y-6">
+      <!-- Mode Switch: Input Nilai vs Rekap Bulanan -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex rounded-xl bg-slate-200/80 p-1 text-xs font-semibold text-slate-700">
+          <button onclick="penilaianViewMode='input'; routeTo('penilaian');" class="px-3.5 py-1.5 rounded-lg transition ${penilaianViewMode === 'input' ? 'bg-white text-blue-600 shadow-sm font-bold' : 'hover:text-slate-900'}">
+            📝 Input Penilaian (Tugas, UTS, UAS)
+          </button>
+          <button onclick="penilaianViewMode='rekap'; routeTo('penilaian');" class="px-3.5 py-1.5 rounded-lg transition ${penilaianViewMode === 'rekap' ? 'bg-white text-blue-600 shadow-sm font-bold' : 'hover:text-slate-900'}">
+            📊 Rekap Nilai & Unduh Laporan
+          </button>
+        </div>
+
+        <!-- Pilihan Paket -->
+        <div class="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold text-slate-600">
+          ${['Paket A', 'Paket B', 'Paket C'].map(pkt => `
+            <button onclick="selectedNilaiPaket='${pkt}'; routeTo('penilaian');" class="px-3.5 py-1.5 rounded-lg transition ${selectedNilaiPaket === pkt ? 'bg-white text-blue-600 shadow-sm font-bold' : 'hover:text-slate-900'}">
+              ${pkt}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      ${penilaianViewMode === 'input' ? `
+        <!-- MODE INPUT NILAI HARIAN / EVALUASI -->
+        <div class="glass-card rounded-2xl p-4 border border-slate-200 space-y-4">
+          <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+            
+            <!-- Pilihan Jenis Nilai (Tugas, UTS, UAS) -->
+            <div class="flex rounded-xl bg-blue-50/80 p-1 text-xs font-semibold text-blue-700">
+              ${['Tugas', 'UTS', 'UAS'].map(jns => `
+                <button onclick="selectedNilaiJenis='${jns}'; routeTo('penilaian');" class="px-4 py-1.5 rounded-lg transition ${selectedNilaiJenis === jns ? 'bg-blue-600 text-white shadow-sm font-bold' : 'hover:text-blue-900'}">
+                  ${jns === 'Tugas' ? '📝 Tugas Modul' : jns === 'UTS' ? '📑 UTS' : '🎓 UAS'}
+                </button>
+              `).join('')}
+            </div>
+
+            <!-- Pilihan Mata Pelajaran -->
+            <div class="flex items-center gap-2">
+              <label class="text-xs font-bold text-slate-700 whitespace-nowrap">Mata Pelajaran:</label>
+              <select onchange="selectedNilaiMapel=this.value; routeTo('penilaian');" class="px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+                ${mapelOptions.map(m => `
+                  <option value="${m}" ${m === selectedNilaiMapel ? 'selected' : ''}>${m}</option>
+                `).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div class="p-3 bg-blue-50/60 rounded-xl border border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+            <div class="text-slate-700">
+              Sedang menginput: <strong class="text-blue-700 font-bold">${selectedNilaiJenis}</strong> untuk mata pelajaran <strong class="text-blue-700 font-bold">${selectedNilaiMapel}</strong> (${selectedNilaiPaket}).
+            </div>
+            <div class="flex gap-2">
+              <button onclick="syncNilaiToRaportBatch()" title="Hitung dan masukkan otomatis ke Raport A4" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs transition flex items-center gap-1 shadow-sm">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sinkronkan ke Raport
+              </button>
+              <button onclick="saveBatchPenilaian()" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs transition flex items-center gap-1 shadow-sm">
+                <i data-lucide="save" class="w-3.5 h-3.5"></i> Simpan Presensi Nilai
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabel Input Nilai Siswa -->
+        <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-semibold">
+                  <th class="p-3.5 w-12 text-center">No</th>
+                  <th class="p-3.5">NISN</th>
+                  <th class="p-3.5">Nama Peserta Didik</th>
+                  <th class="p-3.5 w-32 text-center">Nilai (${selectedNilaiJenis})</th>
+                  <th class="p-3.5 w-24 text-center">Predikat</th>
+                  <th class="p-3.5">Catatan / Deskripsi Capaian</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${students.length ? students.map((st, idx) => {
+                  const existing = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === selectedNilaiJenis);
+                  const currentScore = existing ? existing.nilai : 80;
+                  const currentNote = existing ? existing.catatan : `Capaian penilaian ${selectedNilaiJenis.toLowerCase()} terlaksana dengan baik.`;
+                  const pred = currentScore >= 85 ? 'A' : currentScore >= 75 ? 'B' : currentScore >= 65 ? 'C' : 'D';
+
+                  return `
+                    <tr class="hover:bg-slate-50/60 transition">
+                      <td class="p-3.5 text-center font-medium text-slate-500">${idx + 1}</td>
+                      <td class="p-3.5 font-mono font-medium text-slate-700">${st.nisn}</td>
+                      <td class="p-3.5 font-bold text-slate-900">${st.nama_lengkap}</td>
+                      <td class="p-3.5 text-center">
+                        <input type="number" min="0" max="100" id="input-nilai-${st.id}" value="${currentScore}" onchange="updatePredikatBadge('${st.id}', this.value)" class="w-20 px-2.5 py-1 text-center font-bold text-xs rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500/20">
+                      </td>
+                      <td class="p-3.5 text-center">
+                        <span id="badge-pred-${st.id}" class="px-2.5 py-1 rounded-md text-xs font-bold ${pred === 'A' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}">${pred}</span>
+                      </td>
+                      <td class="p-3.5">
+                        <input type="text" id="input-catatan-${st.id}" value="${currentNote}" placeholder="Catatan capaian siswa" class="w-full px-3 py-1 text-xs rounded-lg border border-slate-200">
+                      </td>
+                    </tr>
+                  `;
+                }).join('') : `
+                  <tr><td colspan="6" class="p-8 text-center text-slate-400">Belum ada warga belajar pada ${selectedNilaiPaket}.</td></tr>
+                `}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : `
+        <!-- MODE REKAP NILAI BULANAN / SEMESTER DENGAN DOWNLOAD PDF, WORD, & EXCEL -->
+        <div class="space-y-4">
+          <div class="glass-card rounded-2xl p-4 border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="flex items-center gap-2">
+                <label class="text-xs font-bold text-slate-700">Mata Pelajaran:</label>
+                <select onchange="selectedNilaiMapel=this.value; routeTo('penilaian');" class="px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+                  ${mapelOptions.map(m => `
+                    <option value="${m}" ${m === selectedNilaiMapel ? 'selected' : ''}>${m}</option>
+                  `).join('')}
+                </select>
+              </div>
+              <div class="flex items-center gap-2">
+                <label class="text-xs font-bold text-slate-700">Periode:</label>
+                <input type="month" value="${selectedNilaiMonth}" onchange="selectedNilaiMonth=this.value; routeTo('penilaian');" class="px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <button onclick="exportNilaiToPdf()" class="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+                <i data-lucide="printer" class="w-4 h-4"></i> Unduh / Cetak PDF
+              </button>
+              <button onclick="exportNilaiToWord()" class="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+                <i data-lucide="file-text" class="w-4 h-4"></i> Unduh Word (.doc)
+              </button>
+              <button onclick="exportNilaiToExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Unduh Excel (.xls)
+              </button>
+            </div>
+          </div>
+
+          <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+            <div class="p-4 border-b border-slate-100 bg-slate-50/50">
+              <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                Rekap Nilai Komprehensif: ${selectedNilaiPaket} • ${selectedNilaiMapel} (Periode ${selectedNilaiMonth})
+              </h4>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase text-[11px]">
+                    <th class="p-3 text-center w-10">No</th>
+                    <th class="p-3">NISN</th>
+                    <th class="p-3">Nama Warga Belajar</th>
+                    <th class="p-3 text-center">Tugas (30%)</th>
+                    <th class="p-3 text-center">UTS (30%)</th>
+                    <th class="p-3 text-center">UAS (40%)</th>
+                    <th class="p-3 text-center">Nilai Akhir</th>
+                    <th class="p-3 text-center">Predikat</th>
+                    <th class="p-3">Catatan / Deskripsi Capaian</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${students.length ? students.map((st, idx) => {
+                    const tgs = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.nilai || 80;
+                    const uts = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UTS')?.nilai || tgs;
+                    const uas = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.nilai || uts;
+                    const finalScore = Math.round((tgs * 0.3) + (uts * 0.3) + (uas * 0.4));
+                    const pred = finalScore >= 85 ? 'A' : finalScore >= 75 ? 'B' : finalScore >= 65 ? 'C' : 'D';
+                    const lastNote = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.catatan || 
+                                     db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.catatan || 'Capaian materi sangat baik.';
+
+                    return `
+                      <tr class="hover:bg-slate-50">
+                        <td class="p-3 text-center font-medium text-slate-500">${idx + 1}</td>
+                        <td class="p-3 font-mono font-medium">${st.nisn}</td>
+                        <td class="p-3 font-bold text-slate-900">${st.nama_lengkap}</td>
+                        <td class="p-3 text-center font-semibold">${tgs}</td>
+                        <td class="p-3 text-center font-semibold">${uts}</td>
+                        <td class="p-3 text-center font-semibold">${uas}</td>
+                        <td class="p-3 text-center font-black text-blue-700">${finalScore}</td>
+                        <td class="p-3 text-center font-bold">
+                          <span class="px-2 py-0.5 rounded-md text-xs ${pred === 'A' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}">${pred}</span>
+                        </td>
+                        <td class="p-3 text-slate-600 text-[11px]">${lastNote}</td>
+                      </tr>
+                    `;
+                  }).join('') : `
+                    <tr><td colspan="9" class="p-8 text-center text-slate-400">Belum ada siswa terdaftar pada ${selectedNilaiPaket}.</td></tr>
+                  `}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function updatePredikatBadge(studentId, score) {
+  const num = parseInt(score) || 0;
+  const badge = document.getElementById(`badge-pred-${studentId}`);
+  if (!badge) return;
+
+  const pred = num >= 85 ? 'A' : num >= 75 ? 'B' : num >= 65 ? 'C' : 'D';
+  badge.textContent = pred;
+  badge.className = `px-2.5 py-1 rounded-md text-xs font-bold ${pred === 'A' ? 'bg-blue-100 text-blue-700' : pred === 'B' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`;
+}
+
+function saveBatchPenilaian() {
+  const db = getDb();
+  const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
+
+  students.forEach(st => {
+    const inputScore = document.getElementById(`input-nilai-${st.id}`);
+    const inputCatatan = document.getElementById(`input-catatan-${st.id}`);
+    if (inputScore && inputCatatan) {
+      const scoreVal = parseInt(inputScore.value) || 0;
+      const noteVal = inputCatatan.value.trim() || `Capaian nilai ${selectedNilaiJenis} baik.`;
+
+      const existingIdx = db.penilaian.findIndex(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === selectedNilaiJenis);
+      if (existingIdx !== -1) {
+        db.penilaian[existingIdx].nilai = scoreVal;
+        db.penilaian[existingIdx].catatan = noteVal;
+      } else {
+        db.penilaian.push({
+          id: 'pen-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+          warga_belajar_id: st.id,
+          paket: selectedNilaiPaket,
+          mapel: selectedNilaiMapel,
+          jenis: selectedNilaiJenis,
+          nilai: scoreVal,
+          catatan: noteVal
+        });
+      }
+    }
+  });
+
+  saveDb(db);
+  showToast(`Presensi Nilai ${selectedNilaiJenis} untuk ${selectedNilaiMapel} berhasil disimpan!`, 'success');
+}
+
+function syncNilaiToRaportBatch() {
+  saveBatchPenilaian();
+  const db = getDb();
+  const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
+  let syncedCount = 0;
+
+  students.forEach(st => {
+    let raport = db.raport.find(r => r.warga_belajar_id === st.id);
+    if (!raport) {
+      raport = createDefaultRaport(st);
+      db.raport.push(raport);
+    }
+
+    // Ambil nilai Tugas, UTS, dan UAS siswa untuk mapel terpilih
+    const tgs = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.nilai || 80;
+    const uts = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UTS')?.nilai || tgs;
+    const uas = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.nilai || uts;
+
+    // Kalkulasi Rata-rata Nilai Akhir Raport: Bobot Tugas 30%, UTS 30%, UAS 40%
+    const finalScore = Math.round((tgs * 0.3) + (uts * 0.3) + (uas * 0.4));
+    const predikat = finalScore >= 85 ? 'A' : finalScore >= 75 ? 'B' : finalScore >= 65 ? 'C' : 'D';
+
+    let mapelObj = raport.nilai_mapel.find(m => m.mapel === selectedNilaiMapel);
+    if (mapelObj) {
+      mapelObj.akhir = finalScore;
+      mapelObj.predikat = predikat;
+    } else {
+      raport.nilai_mapel.push({
+        mapel: selectedNilaiMapel,
+        akhir: finalScore,
+        predikat: predikat,
+        capaian: `Menunjukkan penuntasan modul yang sangat baik dalam penilaian Tugas (${tgs}), UTS (${uts}), dan UAS (${uas}).`
+      });
+    }
+    syncedCount++;
+  });
+
+  saveDb(db);
+  showToast(`Berhasil menyinkronkan nilai ${selectedNilaiMapel} ke ${syncedCount} lembar Raport!`, 'success');
+}
+
+// ==============================================================================
+// 7. MENU RAPORT KESETARAAN STANDAR A4 (REVISI KOP TENGAH & TTD KEPALA PKBM)
+// ==============================================================================
+let activeRaportStudentId = null;
+
+function openRaportForStudent(studentId) {
+  activeRaportStudentId = studentId;
+  routeTo('raport');
+}
+
+function renderRaportView() {
+  if (currentUser.role === 'siswa') {
+    routeTo('dashboard');
+    return '';
+  }
+
+  const db = getDb();
+
+  if (!activeRaportStudentId && db.warga_belajar.length > 0) {
+    activeRaportStudentId = db.warga_belajar[0].id;
+  }
+
+  const selectedStudent = db.warga_belajar.find(w => w.id === activeRaportStudentId);
+  if (!selectedStudent) {
+    return `<div class="p-8 text-center text-slate-500">Silakan pilih atau tambahkan data warga belajar terlebih dahulu.</div>`;
+  }
+
+  let raportData = db.raport.find(r => r.warga_belajar_id === selectedStudent.id);
+  if (!raportData) {
+    raportData = createDefaultRaport(selectedStudent);
+    db.raport.push(raportData);
+    saveDb(db);
+  }
+
+  return `
+    <div class="space-y-6">
+      <!-- Selector & Action Toolbar -->
+      <div class="glass-card rounded-2xl p-4 border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-1">
+          <label class="text-xs font-bold text-slate-700 whitespace-nowrap">Pilih Warga Belajar:</label>
+          <select id="raport-student-select" onchange="activeRaportStudentId=this.value; routeTo('raport');" class="w-full sm:w-72 px-3.5 py-2 text-xs rounded-xl border border-slate-200 bg-white font-semibold">
+            ${db.warga_belajar.map(wb => `
+              <option value="${wb.id}" ${wb.id === activeRaportStudentId ? 'selected' : ''}>
+                ${wb.nama_lengkap} (${wb.paket} - ${wb.nisn})
+              </option>
+            `).join('')}
+          </select>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="routeTo('penilaian')" class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i data-lucide="calculator" class="w-4 h-4"></i> Presensi Nilai
+          </button>
+          <button onclick="openInstitutionModal()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i data-lucide="image" class="w-4 h-4"></i> Atur Logo & Kop
+          </button>
+          <button onclick="openModalEditRaport('${raportData.id}')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
+            <i data-lucide="edit-3" class="w-4 h-4"></i> Input Nilai & Pejabat Raport
+          </button>
+          <button onclick="printOfficialRaport()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-md shadow-blue-500/20">
+            <i data-lucide="printer" class="w-4 h-4"></i> Cetak / Simpan PDF (A4)
+          </button>
+        </div>
+      </div>
+
+      <!-- Preview Lembar Raport Standar Format A4 -->
+      <div class="overflow-x-auto pb-4">
+        ${renderStudentRaportSheet(selectedStudent, raportData)}
+      </div>
+    </div>
+  `;
+}
+
+function createDefaultRaport(student) {
+  const db = getDb();
+  const profile = getInstitutionProfile();
+  const defaultTutor = db.guru.length ? db.guru[0].nama_lengkap : 'Dra. Sri Wahyuni, M.Pd.';
+  const defaultTutorNip = db.guru.length ? (db.guru[0].nip_guru || '-') : '19800412 200501 2 004';
+
+  let defaultSubjects = [
+    { mapel: 'Pendidikan Agama & Budi Pekerti', akhir: 85, predikat: 'A', capaian: 'Menunjukkan pemahaman yang sangat baik tentang toleransi dan ketakwaan.' },
+    { mapel: 'Pendidikan Pancasila & Kewarganegaraan', akhir: 80, predikat: 'B', capaian: 'Mampu mematuhi tata tertib dan norma dalam hidup bermasyarakat.' },
+    { mapel: 'Bahasa Indonesia', akhir: 84, predikat: 'A', capaian: 'Terampil dalam membaca pemahaman bahan bacaan dan menulis ringkasan modul.' },
+    { mapel: 'Matematika Kesetaraan', akhir: 76, predikat: 'B', capaian: 'Cukup memahami operasi hitung aritmatika sosial terapan.' },
+    { mapel: 'Ilmu Pengetahuan Terpadu', akhir: 80, predikat: 'B', capaian: 'Memahami hubungan alam dan sosial di lingkungan sekitar.' },
+    { mapel: 'Pemberdayaan & Keterampilan Vokasional', akhir: 90, predikat: 'A', capaian: 'Kreatif dan terampil dalam kegiatan praktik kewirausahaan mandiri.' }
+  ];
+
+  return {
+    id: 'rap-' + Date.now(),
+    warga_belajar_id: student.id,
+    wali_kelas_nama: defaultTutor,
+    wali_kelas_nip: defaultTutorNip,
+    kepala_pkbm_nama: profile.nama_kepala,
+    kepala_pkbm_nip: profile.nip_kepala || '-',
+    kota_terbit: profile.kota_terbit,
+    tanggal_terbit: profile.tanggal_cetak,
+    tahun_ajaran: '2026/2027',
+    semester: 'Ganjil',
+    catatan_wali: 'Menunjukkan motivasi belajar mandiri yang konsisten dan aktif dalam tutorial kelompok tatap muka.',
+    predikat_sikap: 'Sangat Baik',
+    status_kenaikan: 'Memenuhi Kriteria Penuntasan Modul',
+    nilai_mapel: defaultSubjects
+  };
+}
+
+// RENDER LEMBAR RAPORT RESMI FORMAT A4 (REVISI: KOP TENGAH, LOGO KIRI, TTD NAMA ATAS GARIS & NIP BAWAH GARIS)
+function renderStudentRaportSheet(student, raport) {
+  const profile = getInstitutionProfile();
+  const db = getDb();
+
+  const waliKelasNama = raport.wali_kelas_nama || (db.guru[0]?.nama_lengkap || 'Dra. Sri Wahyuni, M.Pd.');
+  const waliTutorObj = db.guru.find(g => g.nama_lengkap === waliKelasNama);
+  let waliKelasNip = '-';
+  if (raport.wali_kelas_nip && raport.wali_kelas_nip.trim() !== '') {
+    waliKelasNip = raport.wali_kelas_nip.trim();
+  } else if (waliTutorObj && waliTutorObj.nip_guru && waliTutorObj.nip_guru.trim() !== '' && waliTutorObj.nip_guru !== '-') {
+    waliKelasNip = waliTutorObj.nip_guru.trim();
+  }
+
+  const kepalaNama = raport.kepala_pkbm_nama || profile.nama_kepala;
+  let kepalaNip = '-';
+  if (raport.kepala_pkbm_nip && raport.kepala_pkbm_nip.trim() !== '' && raport.kepala_pkbm_nip.trim() !== '-') {
+    kepalaNip = raport.kepala_pkbm_nip.trim();
+  } else if (profile.nip_kepala && profile.nip_kepala.trim() !== '' && profile.nip_kepala.trim() !== '-') {
+    kepalaNip = profile.nip_kepala.trim();
+  }
+
+  const kotaTerbit = raport.kota_terbit || profile.kota_terbit;
+  const tanggalTerbit = raport.tanggal_terbit || profile.tanggal_cetak;
+  const pkbmCleanTitle = getCleanPkbmName(profile.nama_pkbm);
+
+  return `
+    <div id="raport-sheet-card" class="bg-white rounded-2xl md:rounded-3xl p-6 md:p-12 border border-slate-300 shadow-xl max-w-[210mm] w-full min-h-[297mm] mx-auto space-y-6 text-slate-900 print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none">
+      
+      <!-- KOP SURAT RESMI: SIMETRIS, RATA TENGAH DENGAN PENYEIMBANG RUANG AGAR TEKS TIDAK TERPOTONG -->
+      <div class="border-b-[3px] border-slate-900 pb-4 relative avoid-page-break">
+        <div class="flex items-center gap-3">
+          
+          <!-- Logo Tetap di Sebelah Kiri -->
+          <div class="w-16 h-16 md:w-20 md:h-20 flex items-center justify-center overflow-hidden shrink-0">
+            ${profile.logo_url ? `
+              <img src="${profile.logo_url}" alt="Logo PKBM" class="w-full h-full object-contain">
+            ` : `
+              <div class="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-blue-700 text-white flex items-center justify-center font-black text-xl shadow-md">
+                PKBM
+              </div>
+            `}
+          </div>
+
+          <!-- Teks KOP Rata Tengah Sempurna Tanpa Terpotong -->
+          <div class="flex-1 text-center px-1">
+            <h2 class="text-sm sm:text-base md:text-[17px] font-black uppercase tracking-tight text-slate-900 leading-snug">
+              ${profile.nama_pkbm}
+            </h2>
+            <p class="text-[11px] md:text-xs text-slate-700 font-semibold mt-1">Penyelenggara Pendidikan Nonformal Kesetaraan Paket A, Paket B, dan Paket C</p>
+            <p class="text-[10px] md:text-[11px] text-slate-600 mt-0.5">Izin Operasional: ${profile.izin_operasional} • NPSN: ${profile.npsn}</p>
+            <p class="text-[9px] md:text-[10px] text-slate-500 mt-0.5">${profile.alamat}</p>
+          </div>
+
+          <!-- Spacer Kanan Penyeimbang agar Rata Tengah Presisi Simetris dengan Logo -->
+          <div class="w-16 md:w-20 shrink-0 hidden sm:block" aria-hidden="true"></div>
+        </div>
+
+        <div class="mt-4 pt-2 border-t border-slate-300 flex justify-center">
+          <div class="inline-block px-4 py-1 bg-slate-100 rounded-full text-xs font-black uppercase tracking-wider text-slate-800 border border-slate-400">
+            LAPORAN HASIL BELAJAR (RAPORT) PENDIDIKAN KESETARAAN
+          </div>
+        </div>
+      </div>
+
+      <!-- IDENTITAS WARGA BELAJAR -->
+      <div class="grid grid-cols-2 gap-4 text-xs bg-slate-50/70 p-4 rounded-xl border border-slate-300 avoid-page-break">
+        <div class="space-y-1.5">
+          <div class="flex"><span class="w-36 text-slate-600">Nama Warga Belajar</span><strong class="text-slate-900">: ${student.nama_lengkap}</strong></div>
+          <div class="flex"><span class="w-36 text-slate-600">Nomor Induk / NISN</span><strong class="text-slate-900 font-mono">: ${student.nisn}</strong></div>
+          <div class="flex"><span class="w-36 text-slate-600">Program Kesetaraan</span><strong class="text-blue-800">: ${student.paket}</strong></div>
+        </div>
+        <div class="space-y-1.5">
+          <div class="flex"><span class="w-36 text-slate-600">Tingkat / Fase</span><strong class="text-slate-900">: ${student.tingkat || '-'}</strong></div>
+          <div class="flex"><span class="w-36 text-slate-600">Tahun Pelajaran</span><strong class="text-slate-900">: ${raport.tahun_ajaran || '2026/2027'}</strong></div>
+          <div class="flex"><span class="w-36 text-slate-600">Semester</span><strong class="text-slate-900">: ${raport.semester || 'Ganjil'}</strong></div>
+        </div>
+      </div>
+
+      <!-- TABEL CAPAIAN KOMPETENSI MATA PELAJARAN (OTOMATIS LANJUT KE HALAMAN 2/3 BILA TIDAK MUAT) -->
+      <div>
+        <h4 class="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2">A. Capaian Pembelajaran & Penuntasan Modul</h4>
+        <div class="border border-slate-400 rounded-lg overflow-hidden">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="bg-slate-100 text-slate-800 font-bold border-b border-slate-400">
+                <th class="p-2.5 text-center w-10 border-r border-slate-300">No</th>
+                <th class="p-2.5 border-r border-slate-300">Mata Pelajaran</th>
+                <th class="p-2.5 text-center w-20 border-r border-slate-300">Nilai Akhir</th>
+                <th class="p-2.5 text-center w-16 border-r border-slate-300">Predikat</th>
+                <th class="p-2.5">Deskripsi Capaian Kompetensi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-300">
+              ${(raport.nilai_mapel || []).map((m, idx) => `
+                <tr class="hover:bg-slate-50">
+                  <td class="p-2.5 text-center font-medium border-r border-slate-200">${idx + 1}</td>
+                  <td class="p-2.5 font-bold text-slate-900 border-r border-slate-200">${m.mapel}</td>
+                  <td class="p-2.5 text-center font-black border-r border-slate-200 ${m.akhir >= 85 ? 'text-blue-700' : 'text-slate-800'}">${m.akhir}</td>
+                  <td class="p-2.5 text-center font-bold border-r border-slate-200">${m.predikat}</td>
+                  <td class="p-2.5 text-slate-700 text-[11px] leading-relaxed">${m.capaian}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- CATATAN SIKAP & STATUS KELULUSAN / KETUNTASAN MODUL -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs avoid-page-break">
+        <div class="p-4 rounded-xl border border-slate-300 bg-slate-50/50">
+          <h4 class="font-bold text-slate-800 mb-1.5">B. Perkembangan Karakter & Sikap</h4>
+          <p class="text-slate-700 leading-relaxed text-[11px]">${raport.catatan_wali || 'Warga belajar memiliki sikap disiplin, toleransi, dan bersosialisasi dengan sangat baik.'}</p>
+          <div class="mt-2 text-[11px]">
+            <span class="text-slate-500">Predikat Sikap: </span>
+            <strong class="text-emerald-800 font-bold">${raport.predikat_sikap || 'Sangat Baik'}</strong>
+          </div>
+        </div>
+
+        <div class="p-4 rounded-xl border border-slate-300 bg-slate-50/50">
+          <h4 class="font-bold text-slate-800 mb-1.5">C. Status Ketuntasan Modul Belajar</h4>
+          <p class="text-slate-700 text-[11px] leading-relaxed mb-2">Berdasarkan hasil evaluasi portofolio modul tutorial dan asesmen mandiri:</p>
+          <span class="inline-block px-3 py-1 bg-emerald-100 text-emerald-900 font-extrabold rounded-lg text-xs border border-emerald-300">
+            ${raport.status_kenaikan || 'Memenuhi Kriteria Penuntasan Modul'}
+          </span>
+        </div>
+      </div>
+
+      <!-- REVISI: TANDA TANGAN DENGAN KETERANGAN "Kepala PKBM [Nama PKBM]" -->
+      <div class="pt-6 grid grid-cols-3 gap-4 text-center text-xs text-slate-900 avoid-page-break">
+        
+        <!-- Kolom Orang Tua -->
+        <div class="flex flex-col items-center">
+          <p class="text-[11px] text-slate-600 mb-14 leading-relaxed">Mengetahui,<br>Orang Tua / Wali Siswa</p>
+          <p class="font-bold text-slate-900 leading-tight">( ........................................ )</p>
+          <div class="w-40 border-b border-slate-800 my-1"></div>
+          <span class="block text-[10px] text-slate-400 select-none">-</span>
+        </div>
+
+        <!-- Kolom Tutor Pembimbing / Wali Kelas -->
+        <div class="flex flex-col items-center">
+          <p class="text-[11px] text-slate-600 mb-14 leading-relaxed">${kotaTerbit}, ${tanggalTerbit}<br>Tutor Pembimbing / Wali Kelas</p>
+          <p class="font-bold text-slate-900 leading-tight">${waliKelasNama}</p>
+          <div class="w-44 border-b border-slate-800 my-1"></div>
+          <span class="block text-[10px] text-slate-700 font-mono font-medium">NIP: ${waliKelasNip}</span>
+        </div>
+
+        <!-- Kolom Kepala PKBM (Sesuai Format: Kepala PKBM ...) -->
+        <div class="flex flex-col items-center">
+          <p class="text-[11px] text-slate-600 mb-14 leading-relaxed">Kepala ${pkbmCleanTitle},<br>Penyelenggara Pendidikan Kesetaraan</p>
+          <p class="font-bold text-slate-900 leading-tight">${kepalaNama}</p>
+          <div class="w-44 border-b border-slate-800 my-1"></div>
+          <span class="block text-[10px] text-slate-700 font-mono font-medium">NIP: ${kepalaNip}</span>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+function openModalEditRaport(raportId) {
+  const db = getDb();
+  const profile = getInstitutionProfile();
+  const r = db.raport.find(item => item.id === raportId);
+  if (!r) return;
+
+  const tutorOptions = db.guru.map(g => `
+    <option value="${g.nama_lengkap}" ${r.wali_kelas_nama === g.nama_lengkap ? 'selected' : ''}>
+      ${g.nama_lengkap} (NIP: ${g.nip_guru || '-'})
+    </option>
+  `).join('');
+
+  const content = `
+    <form onsubmit="saveRaportValues(event, '${r.id}')" class="space-y-4 text-xs">
+      <div class="p-3.5 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-3">
+        <h4 class="font-bold text-blue-900 text-xs flex items-center gap-1.5">
+          <i data-lucide="user-check" class="w-4 h-4 text-blue-700"></i> Penandatangan Raport (Nama di Atas Garis, NIP di Bawah Garis)
+        </h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Pilih Wali Kelas / Tutor</label>
+            <select id="edit-rap-wali" onchange="autoFillTutorNip(this.value)" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+              ${tutorOptions}
+            </select>
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">NIP Wali Kelas (Isi '-' jika non-NIP)</label>
+            <input type="text" id="edit-rap-nip-wali" value="${r.wali_kelas_nip || '-'}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Nama Kepala PKBM</label>
+            <input type="text" id="edit-rap-kepala" value="${r.kepala_pkbm_nama || profile.nama_kepala}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">NIP Kepala PKBM (Isi '-' jika non-NIP)</label>
+            <input type="text" id="edit-rap-nip-kepala" value="${r.kepala_pkbm_nip || profile.nip_kepala || '-'}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Kota Penerbitan</label>
+            <input type="text" id="edit-rap-kota" value="${r.kota_terbit || profile.kota_terbit}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Tanggal Cetak Rapor</label>
+            <input type="text" id="edit-rap-tgl" value="${r.tanggal_terbit || profile.tanggal_cetak}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white">
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Tahun Pelajaran</label>
+          <input type="text" id="edit-rap-ta" value="${r.tahun_ajaran}" required class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200">
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Semester</label>
+          <select id="edit-rap-sem" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200">
+            <option value="Ganjil" ${r.semester === 'Ganjil' ? 'selected' : ''}>Ganjil</option>
+            <option value="Genap" ${r.semester === 'Genap' ? 'selected' : ''}>Genap</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="font-bold text-slate-800">Nilai & Capaian Kompetensi Mata Pelajaran:</label>
+          <button type="button" onclick="addNewMapelToRaport('${r.id}')" class="text-blue-600 hover:text-blue-800 text-[11px] font-bold flex items-center gap-1">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Tambah Mapel
+          </button>
+        </div>
+        <div class="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+          ${r.nilai_mapel.map((m, idx) => `
+            <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+              <div class="flex justify-between items-center text-xs">
+                <span class="font-bold text-slate-800">${m.mapel}</span>
+                <div class="flex items-center gap-1">
+                  <span class="text-[10px] text-slate-500">Nilai Akhir:</span>
+                  <input type="number" min="0" max="100" id="edit-val-${idx}" value="${m.akhir}" class="w-16 px-2 py-0.5 text-xs font-bold text-center rounded border border-slate-300">
+                </div>
+              </div>
+              <input type="text" id="edit-capaian-${idx}" value="${m.capaian}" placeholder="Deskripsi capaian kompetensi" class="w-full px-2.5 py-1 text-[11px] rounded border border-slate-200">
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div>
+        <label class="block font-semibold text-slate-700 mb-1">Catatan Tutor / Wali Kelas</label>
+        <textarea id="edit-rap-catatan" rows="2" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200">${r.catatan_wali}</textarea>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Predikat Sikap</label>
+          <select id="edit-rap-sikap" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200">
+            <option value="Sangat Baik" ${r.predikat_sikap === 'Sangat Baik' ? 'selected' : ''}>Sangat Baik</option>
+            <option value="Baik" ${r.predikat_sikap === 'Baik' ? 'selected' : ''}>Baik</option>
+            <option value="Cukup" ${r.predikat_sikap === 'Cukup' ? 'selected' : ''}>Cukup</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Status Ketuntasan / Kenaikan</label>
+          <input type="text" id="edit-rap-status" value="${r.status_kenaikan}" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200">
+        </div>
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-slate-100 flex gap-2 justify-end">
+        <button type="button" onclick="closeFormModal()" class="px-4 py-2 text-xs font-medium border border-slate-200 rounded-xl hover:bg-slate-50">Batal</button>
+        <button type="submit" class="px-4 py-2 text-xs font-semibold bg-emerald-600 text-white rounded-xl shadow-md hover:bg-emerald-700">Simpan Perubahan Raport</button>
+      </div>
+    </form>
+  `;
+  openFormModal('Perbarui Nilai & Data Raport Siswa', content);
+}
+
+function autoFillTutorNip(namaTutor) {
+  const db = getDb();
+  const tutor = db.guru.find(g => g.nama_lengkap === namaTutor);
+  const inputNip = document.getElementById('edit-rap-nip-wali');
+  if (inputNip && tutor) {
+    inputNip.value = (tutor.nip_guru && tutor.nip_guru.trim() !== '') ? tutor.nip_guru : '-';
+  }
+}
+
+function addNewMapelToRaport(raportId) {
+  const mapelBaru = prompt('Masukkan nama mata pelajaran baru kesetaraan:');
+  if (!mapelBaru || !mapelBaru.trim()) return;
+
+  const db = getDb();
+  const r = db.raport.find(item => item.id === raportId);
+  if (r) {
+    r.nilai_mapel.push({
+      mapel: mapelBaru.trim(),
+      akhir: 80,
+      predikat: 'B',
+      capaian: 'Menunjukkan penguasaan materi modul dengan baik.'
+    });
+    saveDb(db);
+    openModalEditRaport(raportId);
+    showToast(`Mata pelajaran ${mapelBaru} ditambahkan ke raport!`, 'success');
+  }
+}
+
+function saveRaportValues(e, raportId) {
+  e.preventDefault();
+  const db = getDb();
+  const r = db.raport.find(item => item.id === raportId);
+  if (!r) return;
+
+  r.wali_kelas_nama = document.getElementById('edit-rap-wali').value;
+  r.wali_kelas_nip = document.getElementById('edit-rap-nip-wali').value.trim() || '-';
+  r.kepala_pkbm_nama = document.getElementById('edit-rap-kepala').value.trim();
+  r.kepala_pkbm_nip = document.getElementById('edit-rap-nip-kepala').value.trim() || '-';
+  r.kota_terbit = document.getElementById('edit-rap-kota').value.trim();
+  r.tanggal_terbit = document.getElementById('edit-rap-tgl').value.trim();
+
+  r.tahun_ajaran = document.getElementById('edit-rap-ta').value.trim();
+  r.semester = document.getElementById('edit-rap-sem').value;
+  r.catatan_wali = document.getElementById('edit-rap-catatan').value.trim();
+  r.predikat_sikap = document.getElementById('edit-rap-sikap').value;
+  r.status_kenaikan = document.getElementById('edit-rap-status').value.trim();
+
+  r.nilai_mapel.forEach((m, idx) => {
+    const valInput = document.getElementById(`edit-val-${idx}`);
+    const capInput = document.getElementById(`edit-capaian-${idx}`);
+    if (valInput) {
+      const num = parseInt(valInput.value) || 0;
+      m.akhir = num;
+      m.predikat = num >= 85 ? 'A' : num >= 75 ? 'B' : num >= 65 ? 'C' : 'D';
+    }
+    if (capInput) {
+      m.capaian = capInput.value.trim();
+    }
+  });
+
+  saveDb(db);
+  closeFormModal();
+  routeTo('raport');
+  showToast('Nilai dan data raport berhasil disimpan!', 'success');
+}
+
+function printOfficialRaport() {
+  const sheetHtml = document.getElementById('raport-sheet-card').innerHTML;
+  const printContainer = document.getElementById('print-area');
+  printContainer.innerHTML = sheetHtml;
+  window.print();
+}
+
+// ==============================================================================
+// 7.B. MODUL EKSPOR LAPORAN REKAPITULASI (WORD, EXCEL, & PDF)
+// ==============================================================================
+
+function downloadFile(filename, mimeType, content) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+}
+
+function getOfficialExportKop() {
+  const profile = getInstitutionProfile();
+  return `
+    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px; font-family: Arial, sans-serif;">
+      <h2 style="margin: 0; font-size: 13pt; font-weight: bold; text-transform: uppercase;">${profile.nama_pkbm}</h2>
+      <p style="margin: 2px 0; font-size: 9.5pt;">Penyelenggara Pendidikan Nonformal Kesetaraan Paket A, Paket B, dan Paket C</p>
+      <p style="margin: 1px 0; font-size: 8.5pt;">Izin Operasional: ${profile.izin_operasional} | NPSN: ${profile.npsn}</p>
+      <p style="margin: 1px 0; font-size: 8.5pt;">${profile.alamat}</p>
+    </div>
+  `;
+}
+
+function getOfficialExportSignature() {
+  const profile = getInstitutionProfile();
+  const pkbmClean = getCleanPkbmName(profile.nama_pkbm);
+  return `
+    <table style="width: 100%; margin-top: 30px; border: none; font-size: 9.5pt; font-family: Arial, sans-serif;" border="0">
+      <tr>
+        <td style="width: 50%; border: none; text-align: center; vertical-align: top;">
+          <p style="margin: 0;">Mengetahui,</p>
+          <p style="margin: 0; font-weight: bold;">Tutor Pembimbing / Wali Kelas</p>
+          <div style="height: 50px;"></div>
+          <p style="margin: 0; font-weight: bold; text-decoration: underline;">( ........................................ )</p>
+          <p style="margin: 2px 0; font-size: 8.5pt;">NIP: -</p>
+        </td>
+        <td style="width: 50%; border: none; text-align: center; vertical-align: top;">
+          <p style="margin: 0;">${profile.kota_terbit}, ${profile.tanggal_cetak}</p>
+          <p style="margin: 0; font-weight: bold;">Kepala ${pkbmClean}</p>
+          <div style="height: 50px;"></div>
+          <p style="margin: 0; font-weight: bold; text-decoration: underline;">${profile.nama_kepala}</p>
+          <p style="margin: 2px 0; font-size: 8.5pt;">NIP: ${profile.nip_kepala || '-'}</p>
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
+// EKSPOR PRESENSI: WORD (.DOC)
+function exportPresensiToWord() {
+  const db = getDb();
+  const students = db.warga_belajar.filter(w => w.paket === selectedPresensiPaket);
+  const [year, month] = selectedPresensiMonth.split('-');
+  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
+
+  let rowsHtml = '';
+  students.forEach((st, idx) => {
+    const logs = db.presensi.filter(p => p.warga_belajar_id === st.id && p.tanggal.startsWith(selectedPresensiMonth));
+    const h = logs.filter(p => p.status_kehadiran === 'Hadir').length;
+    const i = logs.filter(p => p.status_kehadiran === 'Izin').length;
+    const s = logs.filter(p => p.status_kehadiran === 'Sakit').length;
+    const a = logs.filter(p => p.status_kehadiran === 'Alfa').length;
+    const total = logs.length;
+    const pct = total > 0 ? Math.round((h / total) * 100) : 100;
+    rowsHtml += `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td>${st.nisn}</td>
+        <td><strong>${st.nama_lengkap}</strong></td>
+        <td style="text-align: center;">${st.paket}</td>
+        <td style="text-align: center;">${h}</td>
+        <td style="text-align: center;">${i}</td>
+        <td style="text-align: center;">${s}</td>
+        <td style="text-align: center;">${a}</td>
+        <td style="text-align: center;">${total}</td>
+        <td style="text-align: center; font-weight: bold;">${pct}%</td>
+      </tr>
+    `;
+  });
+
+  const tableHtml = `
+    <table border="1" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 9.5pt;">
+      <thead>
+        <tr style="background-color: #f1f5f9;">
+          <th style="padding: 6px;">No</th>
+          <th style="padding: 6px;">NISN</th>
+          <th style="padding: 6px;">Nama Peserta Didik</th>
+          <th style="padding: 6px;">Program</th>
+          <th style="padding: 6px;">Hadir (H)</th>
+          <th style="padding: 6px;">Izin (I)</th>
+          <th style="padding: 6px;">Sakit (S)</th>
+          <th style="padding: 6px;">Alfa (A)</th>
+          <th style="padding: 6px;">Total</th>
+          <th style="padding: 6px;">Kehadiran (%)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+  `;
+
+  const wordHtml = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head>
+      <meta charset='utf-8'>
+      <title>Rekap Presensi ${selectedPresensiPaket} - ${monthLabel}</title>
+      <style>
+        body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; color: #000; }
+        table { border-collapse: collapse; width: 100%; margin-top: 15px; }
+        th, td { border: 1px solid #333; padding: 6px 8px; font-size: 9.5pt; }
+        th { background-color: #e2e8f0; font-weight: bold; text-align: center; }
+      </style>
+    </head>
+    <body>
+      ${getOfficialExportKop()}
+      <h3 style="text-align: center; margin: 10px 0 3px 0;">LAPORAN REKAPITULASI PRESENSI BELAJAR BULANAN</h3>
+      <p style="text-align: center; margin: 0 0 15px 0; font-size: 9.5pt;">Program: <strong>${selectedPresensiPaket}</strong> | Periode: <strong>${monthLabel}</strong></p>
+      ${tableHtml}
+      ${getOfficialExportSignature()}
+    </body>
+    </html>
+  `;
+
+  downloadFile(`Rekap_Presensi_${selectedPresensiPaket.replace(/\s+/g, '_')}_${selectedPresensiMonth}.doc`, 'application/msword;charset=utf-8', '\ufeff' + wordHtml);
+  showToast('Laporan Rekap Presensi format Word (.doc) berhasil diunduh!', 'success');
+}
+
+// EKSPOR PRESENSI: EXCEL (.XLS)
+function exportPresensiToExcel() {
+  const db = getDb();
+  const students = db.warga_belajar.filter(w => w.paket === selectedPresensiPaket);
+  const [year, month] = selectedPresensiMonth.split('-');
+  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
+
+  let rowsHtml = '';
+  students.forEach((st, idx) => {
+    const logs = db.presensi.filter(p => p.warga_belajar_id === st.id && p.tanggal.startsWith(selectedPresensiMonth));
+    const h = logs.filter(p => p.status_kehadiran === 'Hadir').length;
+    const i = logs.filter(p => p.status_kehadiran === 'Izin').length;
+    const s = logs.filter(p => p.status_kehadiran === 'Sakit').length;
+    const a = logs.filter(p => p.status_kehadiran === 'Alfa').length;
+    const total = logs.length;
+    const pct = total > 0 ? Math.round((h / total) * 100) : 100;
+    rowsHtml += `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td style="mso-number-format:'\\@';">${st.nisn}</td>
+        <td>${st.nama_lengkap}</td>
+        <td style="text-align: center;">${st.paket}</td>
+        <td style="text-align: center;">${h}</td>
+        <td style="text-align: center;">${i}</td>
+        <td style="text-align: center;">${s}</td>
+        <td style="text-align: center;">${a}</td>
+        <td style="text-align: center;">${total}</td>
+        <td style="text-align: center;">${pct}%</td>
+      </tr>
+    `;
+  });
+
+  const excelHtml = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="utf-8">
+      <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Presensi_${selectedPresensiPaket}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+      <style>
+        th, td { border: 0.5pt solid #000; padding: 6px; font-family: Arial; font-size: 10pt; }
+        th { background-color: #dbeafe; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <h3>REKAPITULASI PRESENSI BELAJAR BULANAN - ${selectedPresensiPaket} (${monthLabel})</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>NISN</th>
+            <th>Nama Peserta Didik</th>
+            <th>Program</th>
+            <th>Hadir (H)</th>
+            <th>Izin (I)</th>
+            <th>Sakit (S)</th>
+            <th>Alfa (A)</th>
+            <th>Total</th>
+            <th>Kehadiran (%)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
+
+  downloadFile(`Rekap_Presensi_${selectedPresensiPaket.replace(/\s+/g, '_')}_${selectedPresensiMonth}.xls`, 'application/vnd.ms-excel;charset=utf-8', '\ufeff' + excelHtml);
+  showToast('Laporan Rekap Presensi format Excel (.xls) berhasil diunduh!', 'success');
+}
+
+// EKSPOR PRESENSI: CETAK / PDF (A4)
+function exportPresensiToPdf() {
+  const db = getDb();
+  const students = db.warga_belajar.filter(w => w.paket === selectedPresensiPaket);
+  const [year, month] = selectedPresensiMonth.split('-');
+  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
+
+  let rowsHtml = '';
+  students.forEach((st, idx) => {
+    const logs = db.presensi.filter(p => p.warga_belajar_id === st.id && p.tanggal.startsWith(selectedPresensiMonth));
+    const h = logs.filter(p => p.status_kehadiran === 'Hadir').length;
+    const i = logs.filter(p => p.status_kehadiran === 'Izin').length;
+    const s = logs.filter(p => p.status_kehadiran === 'Sakit').length;
+    const a = logs.filter(p => p.status_kehadiran === 'Alfa').length;
+    const total = logs.length;
+    const pct = total > 0 ? Math.round((h / total) * 100) : 100;
+    rowsHtml += `
+      <tr class="hover:bg-slate-50">
+        <td class="p-2 border border-slate-300 text-center font-medium">${idx + 1}</td>
+        <td class="p-2 border border-slate-300 font-mono">${st.nisn}</td>
+        <td class="p-2 border border-slate-300 font-bold">${st.nama_lengkap}</td>
+        <td class="p-2 border border-slate-300 text-center">${st.paket}</td>
+        <td class="p-2 border border-slate-300 text-center font-bold text-emerald-700">${h}</td>
+        <td class="p-2 border border-slate-300 text-center text-blue-700">${i}</td>
+        <td class="p-2 border border-slate-300 text-center text-amber-700">${s}</td>
+        <td class="p-2 border border-slate-300 text-center text-rose-700">${a}</td>
+        <td class="p-2 border border-slate-300 text-center font-semibold">${total}</td>
+        <td class="p-2 border border-slate-300 text-center font-black">${pct}%</td>
+      </tr>
+    `;
+  });
+
+  const printHtml = `
+    <div class="p-8 max-w-[210mm] mx-auto text-slate-900 bg-white">
+      ${getOfficialExportKop()}
+      <div class="text-center my-4">
+        <h3 class="text-sm font-black uppercase tracking-wide">REKAPITULASI PRESENSI PEMBELAJARAN BULANAN</h3>
+        <p class="text-xs text-slate-600 mt-0.5">Program: <strong>${selectedPresensiPaket}</strong> | Periode: <strong>${monthLabel}</strong></p>
+      </div>
+      <table class="w-full text-xs border-collapse border border-slate-300 my-4">
+        <thead>
+          <tr class="bg-slate-100 font-bold">
+            <th class="p-2 border border-slate-300 text-center w-8">No</th>
+            <th class="p-2 border border-slate-300 text-left">NISN</th>
+            <th class="p-2 border border-slate-300 text-left">Nama Peserta Didik</th>
+            <th class="p-2 border border-slate-300 text-center">Program</th>
+            <th class="p-2 border border-slate-300 text-center">Hadir</th>
+            <th class="p-2 border border-slate-300 text-center">Izin</th>
+            <th class="p-2 border border-slate-300 text-center">Sakit</th>
+            <th class="p-2 border border-slate-300 text-center">Alfa</th>
+            <th class="p-2 border border-slate-300 text-center">Total</th>
+            <th class="p-2 border border-slate-300 text-center">Kehadiran</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+      ${getOfficialExportSignature()}
+    </div>
+  `;
+
+  const printContainer = document.getElementById('print-area');
+  printContainer.innerHTML = printHtml;
+  window.print();
+}
+
+// EKSPOR NILAI: WORD (.DOC)
+function exportNilaiToWord() {
+  const db = getDb();
+  const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
+  const [year, month] = selectedNilaiMonth.split('-');
+  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
+
+  let rowsHtml = '';
+  students.forEach((st, idx) => {
+    const tgs = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.nilai || 80;
+    const uts = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UTS')?.nilai || tgs;
+    const uas = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.nilai || uts;
+    const finalScore = Math.round((tgs * 0.3) + (uts * 0.3) + (uas * 0.4));
+    const pred = finalScore >= 85 ? 'A' : finalScore >= 75 ? 'B' : finalScore >= 65 ? 'C' : 'D';
+    const lastNote = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.catatan || 
+                     db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.catatan || 'Capaian materi sangat baik.';
+
+    rowsHtml += `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td>${st.nisn}</td>
+        <td><strong>${st.nama_lengkap}</strong></td>
+        <td style="text-align: center;">${tgs}</td>
+        <td style="text-align: center;">${uts}</td>
+        <td style="text-align: center;">${uas}</td>
+        <td style="text-align: center; font-weight: bold;">${finalScore}</td>
+        <td style="text-align: center; font-weight: bold;">${pred}</td>
+        <td>${lastNote}</td>
+      </tr>
+    `;
+  });
+
+  const tableHtml = `
+    <table border="1" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 9.5pt;">
+      <thead>
+        <tr style="background-color: #f1f5f9;">
+          <th style="padding: 6px;">No</th>
+          <th style="padding: 6px;">NISN</th>
+          <th style="padding: 6px;">Nama Peserta Didik</th>
+          <th style="padding: 6px;">Tugas (30%)</th>
+          <th style="padding: 6px;">UTS (30%)</th>
+          <th style="padding: 6px;">UAS (40%)</th>
+          <th style="padding: 6px;">Nilai Akhir</th>
+          <th style="padding: 6px;">Predikat</th>
+          <th style="padding: 6px;">Deskripsi Capaian</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+  `;
+
+  const wordHtml = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head>
+      <meta charset='utf-8'>
+      <title>Rekap Nilai ${selectedNilaiPaket} - ${selectedNilaiMapel}</title>
+      <style>
+        body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; color: #000; }
+        table { border-collapse: collapse; width: 100%; margin-top: 15px; }
+        th, td { border: 1px solid #333; padding: 6px 8px; font-size: 9.5pt; }
+        th { background-color: #e2e8f0; font-weight: bold; text-align: center; }
+      </style>
+    </head>
+    <body>
+      ${getOfficialExportKop()}
+      <h3 style="text-align: center; margin: 10px 0 3px 0;">LAPORAN REKAPITULASI PENILAIAN WARGA BELAJAR</h3>
+      <p style="text-align: center; margin: 0 0 15px 0; font-size: 9.5pt;">Program: <strong>${selectedNilaiPaket}</strong> | Mata Pelajaran: <strong>${selectedNilaiMapel}</strong> | Periode: <strong>${monthLabel}</strong></p>
+      ${tableHtml}
+      ${getOfficialExportSignature()}
+    </body>
+    </html>
+  `;
+
+  downloadFile(`Rekap_Nilai_${selectedNilaiPaket.replace(/\s+/g, '_')}_${selectedNilaiMapel.replace(/\s+/g, '_')}_${selectedNilaiMonth}.doc`, 'application/msword;charset=utf-8', '\ufeff' + wordHtml);
+  showToast('Laporan Rekap Nilai format Word (.doc) berhasil diunduh!', 'success');
+}
+
+// EKSPOR NILAI: EXCEL (.XLS)
+function exportNilaiToExcel() {
+  const db = getDb();
+  const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
+  const [year, month] = selectedNilaiMonth.split('-');
+  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
+
+  let rowsHtml = '';
+  students.forEach((st, idx) => {
+    const tgs = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.nilai || 80;
+    const uts = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UTS')?.nilai || tgs;
+    const uas = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.nilai || uts;
+    const finalScore = Math.round((tgs * 0.3) + (uts * 0.3) + (uas * 0.4));
+    const pred = finalScore >= 85 ? 'A' : finalScore >= 75 ? 'B' : finalScore >= 65 ? 'C' : 'D';
+    const lastNote = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.catatan || 
+                     db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.catatan || 'Capaian materi sangat baik.';
+
+    rowsHtml += `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td style="mso-number-format:'\\@';">${st.nisn}</td>
+        <td>${st.nama_lengkap}</td>
+        <td style="text-align: center;">${tgs}</td>
+        <td style="text-align: center;">${uts}</td>
+        <td style="text-align: center;">${uas}</td>
+        <td style="text-align: center; font-weight: bold;">${finalScore}</td>
+        <td style="text-align: center; font-weight: bold;">${pred}</td>
+        <td>${lastNote}</td>
+      </tr>
+    `;
+  });
+
+  const excelHtml = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="utf-8">
+      <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Nilai_${selectedNilaiPaket}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+      <style>
+        th, td { border: 0.5pt solid #000; padding: 6px; font-family: Arial; font-size: 10pt; }
+        th { background-color: #dbeafe; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <h3>REKAPITULASI PENILAIAN WARGA BELAJAR - ${selectedNilaiPaket} • ${selectedNilaiMapel} (${monthLabel})</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>NISN</th>
+            <th>Nama Peserta Didik</th>
+            <th>Tugas (30%)</th>
+            <th>UTS (30%)</th>
+            <th>UAS (40%)</th>
+            <th>Nilai Akhir</th>
+            <th>Predikat</th>
+            <th>Deskripsi Capaian</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
+
+  downloadFile(`Rekap_Nilai_${selectedNilaiPaket.replace(/\s+/g, '_')}_${selectedNilaiMapel.replace(/\s+/g, '_')}_${selectedNilaiMonth}.xls`, 'application/vnd.ms-excel;charset=utf-8', '\ufeff' + excelHtml);
+  showToast('Laporan Rekap Nilai format Excel (.xls) berhasil diunduh!', 'success');
+}
+
+// EKSPOR NILAI: CETAK / PDF (A4)
+function exportNilaiToPdf() {
+  const db = getDb();
+  const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
+  const [year, month] = selectedNilaiMonth.split('-');
+  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
+
+  let rowsHtml = '';
+  students.forEach((st, idx) => {
+    const tgs = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.nilai || 80;
+    const uts = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UTS')?.nilai || tgs;
+    const uas = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.nilai || uts;
+    const finalScore = Math.round((tgs * 0.3) + (uts * 0.3) + (uas * 0.4));
+    const pred = finalScore >= 85 ? 'A' : finalScore >= 75 ? 'B' : finalScore >= 65 ? 'C' : 'D';
+    const lastNote = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.catatan || 
+                     db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.catatan || 'Capaian materi sangat baik.';
+
+    rowsHtml += `
+      <tr class="hover:bg-slate-50">
+        <td class="p-2 border border-slate-300 text-center font-medium">${idx + 1}</td>
+        <td class="p-2 border border-slate-300 font-mono">${st.nisn}</td>
+        <td class="p-2 border border-slate-300 font-bold">${st.nama_lengkap}</td>
+        <td class="p-2 border border-slate-300 text-center font-semibold">${tgs}</td>
+        <td class="p-2 border border-slate-300 text-center font-semibold">${uts}</td>
+        <td class="p-2 border border-slate-300 text-center font-semibold">${uas}</td>
+        <td class="p-2 border border-slate-300 text-center font-black text-blue-700">${finalScore}</td>
+        <td class="p-2 border border-slate-300 text-center font-bold">${pred}</td>
+        <td class="p-2 border border-slate-300 text-slate-700 text-[11px]">${lastNote}</td>
+      </tr>
+    `;
+  });
+
+  const printHtml = `
+    <div class="p-8 max-w-[210mm] mx-auto text-slate-900 bg-white">
+      ${getOfficialExportKop()}
+      <div class="text-center my-4">
+        <h3 class="text-sm font-black uppercase tracking-wide">REKAPITULASI PENILAIAN WARGA BELAJAR</h3>
+        <p class="text-xs text-slate-600 mt-0.5">Program: <strong>${selectedNilaiPaket}</strong> | Mata Pelajaran: <strong>${selectedNilaiMapel}</strong> | Periode: <strong>${monthLabel}</strong></p>
+      </div>
+      <table class="w-full text-xs border-collapse border border-slate-300 my-4">
+        <thead>
+          <tr class="bg-slate-100 font-bold">
+            <th class="p-2 border border-slate-300 text-center w-8">No</th>
+            <th class="p-2 border border-slate-300 text-left">NISN</th>
+            <th class="p-2 border border-slate-300 text-left">Nama Peserta Didik</th>
+            <th class="p-2 border border-slate-300 text-center">Tugas (30%)</th>
+            <th class="p-2 border border-slate-300 text-center">UTS (30%)</th>
+            <th class="p-2 border border-slate-300 text-center">UAS (40%)</th>
+            <th class="p-2 border border-slate-300 text-center">Nilai Akhir</th>
+            <th class="p-2 border border-slate-300 text-center">Predikat</th>
+            <th class="p-2 border border-slate-300 text-left">Deskripsi Capaian</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+      ${getOfficialExportSignature()}
+    </div>
+  `;
+
+  const printContainer = document.getElementById('print-area');
+  printContainer.innerHTML = printHtml;
+  window.print();
+}
+
+// 8. ADMINISTRASI & KAS PKBM (ADMIN)
+function renderAdministrasiView() {
+  const db = getDb();
+  const totalMasuk = db.administrasi_kas.filter(k => k.tipe === 'Masuk').reduce((a, b) => a + Number(b.jumlah || 0), 0);
+  const totalKeluar = db.administrasi_kas.filter(k => k.tipe === 'Keluar').reduce((a, b) => a + Number(b.jumlah || 0), 0);
+  const saldo = totalMasuk - totalKeluar;
+
+  return `
+    <div class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div class="glass-card rounded-2xl p-5 border border-slate-200">
+          <span class="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Total Kas Masuk</span>
+          <h3 class="text-2xl font-black text-slate-800 mt-1">${formatRupiah(totalMasuk)}</h3>
+          <p class="text-[11px] text-slate-500 mt-1">Pendaftaran & BOP Pemerintah</p>
+        </div>
+        <div class="glass-card rounded-2xl p-5 border border-slate-200">
+          <span class="text-xs font-semibold text-rose-600 uppercase tracking-wider">Total Pengeluaran</span>
+          <h3 class="text-2xl font-black text-slate-800 mt-1">${formatRupiah(totalKeluar)}</h3>
+          <p class="text-[11px] text-slate-500 mt-1">Modul cetak, ATK & tutor</p>
+        </div>
+        <div class="glass-card rounded-2xl p-5 border border-slate-200 bg-blue-50/50">
+          <span class="text-xs font-semibold text-blue-700 uppercase tracking-wider">Saldo Kas Tersedia</span>
+          <h3 class="text-2xl font-black text-blue-700 mt-1">${formatRupiah(saldo)}</h3>
+          <p class="text-[11px] text-slate-500 mt-1">Status kas aktif PKBM</p>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden">
+        <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h4 class="font-bold text-slate-800 text-sm">Buku Kas & Administrasi Keuangan</h4>
+            <p class="text-[11px] text-slate-500">Pencatatan iuran pendaftaran, modul kesetaraan, dan operasional.</p>
+          </div>
+          <button onclick="openModalAddKas()" class="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition shadow-md shadow-blue-500/20 flex items-center gap-1.5">
+            <i data-lucide="plus" class="w-4 h-4"></i> Catat Transaksi
+          </button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-semibold">
+                <th class="p-3.5">Tanggal</th>
+                <th class="p-3.5">Kategori</th>
+                <th class="p-3.5">Keterangan</th>
+                <th class="p-3.5">Tipe</th>
+                <th class="p-3.5 text-right">Jumlah</th>
+                <th class="p-3.5 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${db.administrasi_kas.map(k => `
+                <tr class="hover:bg-slate-50/60 transition">
+                  <td class="p-3.5 font-medium text-slate-700">${k.tanggal}</td>
+                  <td class="p-3.5"><span class="px-2 py-0.5 rounded-md bg-slate-100 font-semibold text-slate-700">${k.kategori}</span></td>
+                  <td class="p-3.5 text-slate-800 font-medium">${k.keterangan}</td>
+                  <td class="p-3.5">
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${k.tipe === 'Masuk' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
+                      ${k.tipe}
+                    </span>
+                  </td>
+                  <td class="p-3.5 text-right font-extrabold ${k.tipe === 'Masuk' ? 'text-emerald-600' : 'text-rose-600'}">
+                    ${k.tipe === 'Masuk' ? '+' : '-'} ${formatRupiah(k.jumlah)}
+                  </td>
+                  <td class="p-3.5 text-center">
+                    <button onclick="deleteKas('${k.id}')" class="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition" title="Hapus">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openModalAddKas() {
+  const content = `
+    <form onsubmit="saveKas(event)" class="space-y-3.5">
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Tanggal Transaksi</label>
+        <input type="date" id="form-ks-tgl" value="${new Date().toISOString().split('T')[0]}" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Tipe Transaksi</label>
+          <select id="form-ks-tipe" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+            <option value="Masuk">Pemasukan (Masuk)</option>
+            <option value="Keluar">Pengeluaran (Keluar)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Kategori</label>
+          <select id="form-ks-kat" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+            <option value="Pendaftaran">Pendaftaran Warga Belajar</option>
+            <option value="Modul/Bahan Ajar">Bahan Ajar & Modul</option>
+            <option value="BOP/Operasional">BOP Kesetaraan / Pemerintah</option>
+            <option value="Iuran/SPP">Iuran Belajar / Kas</option>
+            <option value="Lainnya">Lainnya</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Jumlah Nominal (Rp)</label>
+        <input type="number" id="form-ks-jml" required placeholder="Contoh: 350000" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Keterangan / Rincian</label>
+        <textarea id="form-ks-ket" rows="2" required placeholder="Catatan transaksi..." class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200"></textarea>
+      </div>
+      <div class="mt-5 pt-3 border-t border-slate-100 flex gap-2 justify-end">
+        <button type="button" onclick="closeFormModal()" class="px-4 py-2 text-xs font-medium border border-slate-200 rounded-xl hover:bg-slate-50">Batal</button>
+        <button type="submit" class="px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700">Simpan Transaksi</button>
+      </div>
+    </form>
+  `;
+  openFormModal('Catat Transaksi Kas', content);
+}
+
+function saveKas(e) {
+  e.preventDefault();
+  const db = getDb();
+  const tgl = document.getElementById('form-ks-tgl').value;
+  const tipe = document.getElementById('form-ks-tipe').value;
+  const kat = document.getElementById('form-ks-kat').value;
+  const jml = Number(document.getElementById('form-ks-jml').value) || 0;
+  const ket = document.getElementById('form-ks-ket').value.trim();
+
+  db.administrasi_kas.unshift({
+    id: 'ks-' + Date.now(),
+    tanggal: tgl,
+    tipe,
+    kategori: kat,
+    jumlah: jml,
+    keterangan: ket
+  });
+
+  saveDb(db);
+  closeFormModal();
+  routeTo('administrasi');
+  showToast('Catatan transaksi kas berhasil disimpan!', 'success');
+}
+
+async function deleteKas(id) {
+  const confirmed = await customConfirm('Hapus catatan transaksi ini?', 'Hapus Transaksi');
+  if (!confirmed) return;
+
+  const db = getDb();
+  db.administrasi_kas = db.administrasi_kas.filter(k => k.id !== id);
+  saveDb(db);
+  routeTo('administrasi');
+  showToast('Transaksi kas telah dihapus.', 'info');
+}
+
+// 9. CONFIGURATION MODAL & SUPABASE AUTO-SETUP
+function openConfigModal() {
+  const savedCfg = localStorage.getItem(STORAGE_KEYS.CONFIG);
+  if (savedCfg) {
+    try {
+      const parsed = JSON.parse(savedCfg);
+      document.getElementById('cfg-supabase-url').value = parsed.url || '';
+      document.getElementById('cfg-supabase-key').value = parsed.key || '';
+    } catch(e){}
+  }
+  document.getElementById('config-modal').classList.remove('hidden');
+  document.getElementById('config-modal').classList.add('flex');
+}
+
+function closeConfigModal() {
+  document.getElementById('config-modal').classList.add('hidden');
+  document.getElementById('config-modal').classList.remove('flex');
+}
+
+function saveSupabaseConfig() {
+  const url = document.getElementById('cfg-supabase-url').value.trim();
+  const key = document.getElementById('cfg-supabase-key').value.trim();
+
+  if (!url || !key) {
+    showToast('Harap masukkan SUPABASE URL dan ANON KEY dengan benar.', 'warning');
+    return;
+  }
+
+  localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify({ url, key }));
+  SUPABASE_URL = url;
+  SUPABASE_ANON_KEY = key;
+  IS_PREVIEW = false;
+
+  initSupabaseClient();
+  closeConfigModal();
+  showToast('Konfigurasi Supabase disimpan! Menghubungkan...', 'success');
+}
+
+async function initSupabaseClient() {
+  const savedCfg = localStorage.getItem(STORAGE_KEYS.CONFIG);
+  if (savedCfg) {
+    try {
+      const parsed = JSON.parse(savedCfg);
+      if (parsed.url && parsed.key) {
+        SUPABASE_URL = parsed.url;
+        SUPABASE_ANON_KEY = parsed.key;
+        IS_PREVIEW = false;
+      }
+    } catch(e){}
+  }
+
+  if (!IS_PREVIEW && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
+    try {
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      document.getElementById('sync-text').textContent = 'Cloud Terhubung';
+      document.getElementById('status-chip').className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200";
+      await autoSetupDatabase();
+    } catch (err) {
+      console.warn('Gagal menghubungkan Supabase:', err);
+    }
+  } else {
+    document.getElementById('sync-text').textContent = 'Mode Demo';
+  }
+}
+
+async function autoSetupDatabase() {
+  if (!supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient.from('warga_belajar').select('id').limit(1);
+    if (!error && (!data || data.length === 0)) {
+      const db = getDb();
+      await supabaseClient.from('tutor_guru').insert(db.guru);
+      await supabaseClient.from('warga_belajar').insert(db.warga_belajar);
+      await supabaseClient.from('jadwal_modul').insert(db.jadwal_modul);
+      await supabaseClient.from('penilaian').insert(db.penilaian);
+      await supabaseClient.from('administrasi_kas').insert(db.administrasi_kas);
+      showToast('Database Supabase kosong, inisialisasi awal selesai!', 'info');
+    }
+  } catch (err) {
+    console.error('autoSetupDatabase error:', err);
+  }
+}
+
+// 10. SERVICE WORKER REGISTRATION (DYNAMIC BLOB PWA)
+function registerDynamicServiceWorker() {
+  if ('serviceWorker' in navigator) {
+    const swCode = `
+      const CACHE_NAME = 'pkbm-cache-v4';
+      self.addEventListener('install', (e) => self.skipWaiting());
+      self.addEventListener('activate', (e) => e.waitUntil(clients.claim()));
+      self.addEventListener('fetch', (e) => e.respondWith(fetch(e.request).catch(() => caches.match(e.request))));
+    `;
+    const blob = new Blob([swCode], { type: 'application/javascript' });
+    const swUrl = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl).catch(e => console.log('SW register skip:', e));
+  }
+}
+
+// 11. APP INITIALIZATION
+window.addEventListener('DOMContentLoaded', () => {
+  lucide.createIcons();
+  applyInstitutionBrand();
+  initSupabaseClient();
+  registerDynamicServiceWorker();
+
+  const savedSession = localStorage.getItem(STORAGE_KEYS.SESSION);
+  if (savedSession) {
+    try {
+      const parsed = JSON.parse(savedSession);
+      if (parsed && parsed.role) {
+        currentUser = parsed;
+        document.getElementById('view-login').classList.add('hidden');
+        document.getElementById('view-app').classList.remove('hidden');
+        updateUserBadge();
+        renderNavigation();
+        routeTo('dashboard');
+        return;
+      }
+    } catch(e){}
+  }
+
+  document.getElementById('view-login').classList.remove('hidden');
+  document.getElementById('view-app').classList.add('hidden');
+});
+</script>
+</body>
+</html>
