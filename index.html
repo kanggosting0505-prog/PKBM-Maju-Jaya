@@ -110,6 +110,18 @@
       border-bottom: 1px solid rgba(226, 232, 240, 0.85);
     }
 
+    /* RAPORT & DOKUMEN CETAK: SEMUA TEKS HITAM */
+    #raport-sheet-card, #raport-sheet-card *,
+    #print-area, #print-area *,
+    .pdf-bw, .pdf-bw * {
+      color: #000000 !important;
+    }
+    /* Kotak "PKBM" cadangan (latar biru, teks putih) dibuat putih berbingkai agar tetap terbaca */
+    #raport-sheet-card .bg-blue-700, #print-area .bg-blue-700, .pdf-bw .bg-blue-700 {
+      background: #ffffff !important;
+      border: 2px solid #000000 !important;
+    }
+
     /* STANDAR CETAK A4 & KONTROL MULTI-HALAMAN OTOMATIS */
     @page {
       size: A4 portrait;
@@ -501,9 +513,9 @@
  * ==============================================================================
  */
 
-let IS_PREVIEW = false;
-let SUPABASE_URL = "https://qnjkiwkfvyptbrfajjir.supabase.co";
-let SUPABASE_ANON_KEY = "sb_publishable_h84U9vs2KawMf08qwD7LFg_jH2aQGIP";
+let IS_PREVIEW = true;
+let SUPABASE_URL = "";
+let SUPABASE_ANON_KEY = "";
 let supabaseClient = null;
 
 const STORAGE_KEYS = {
@@ -2765,8 +2777,11 @@ function renderRaportView() {
           <button onclick="openModalEditRaport('${raportData.id}')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
             <i data-lucide="edit-3" class="w-4 h-4"></i> Input Nilai & Pejabat Raport
           </button>
-          <button onclick="printOfficialRaport()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-md shadow-blue-500/20">
-            <i data-lucide="printer" class="w-4 h-4"></i> Cetak / Simpan PDF (A4)
+          <button onclick="downloadRaportPdf()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-md shadow-blue-500/20">
+            <i data-lucide="download" class="w-4 h-4"></i> Unduh PDF (A4)
+          </button>
+          <button onclick="printOfficialRaport()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i data-lucide="printer" class="w-4 h-4"></i> Cetak
           </button>
         </div>
       </div>
@@ -3163,6 +3178,112 @@ function saveRaportValues(e, raportId) {
   showToast('Nilai dan data raport berhasil disimpan!', 'success');
 }
 
+// ==============================================================================
+// UNDUH PDF LANGSUNG (tanpa dialog cetak) - html2pdf.js dimuat saat dibutuhkan
+// ==============================================================================
+const HTML2PDF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+let _html2pdfPromise = null;
+
+function loadHtml2Pdf() {
+  if (window.html2pdf) return Promise.resolve();
+  if (_html2pdfPromise) return _html2pdfPromise;
+  _html2pdfPromise = new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = HTML2PDF_URL;
+    sc.onload = () => (window.html2pdf ? resolve() : reject(new Error('Pustaka PDF tidak termuat')));
+    sc.onerror = () => { _html2pdfPromise = null; reject(new Error('Gagal memuat pustaka PDF (cek koneksi internet)')); };
+    document.head.appendChild(sc);
+  });
+  return _html2pdfPromise;
+}
+
+function safeFileName(name) {
+  return String(name || 'dokumen').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_').replace(/_+/g, '_').slice(0, 90);
+}
+
+async function savePdfBlob(blob, filename) {
+  const file = new File([blob], filename, { type: 'application/pdf' });
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // iOS (terutama saat dipasang di layar utama) sering gagal mengunduh langsung -> pakai menu Bagikan > Simpan ke File
+  if (isIOS && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// innerHtml = isi dokumen (sudah berformat A4). Hasil: file PDF A4 diunduh/disimpan.
+async function exportHtmlToPdf(innerHtml, filename) {
+  showSyncOverlay(true, 'Membuat file PDF...');
+  try {
+    await loadHtml2Pdf();
+
+    const el = document.createElement('div');
+    el.className = 'pdf-bw';
+    el.style.cssText = "width:180mm;background:#fff;color:#000;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.35;";
+    el.innerHTML = innerHtml;
+
+    const opt = {
+      margin: [14, 15, 16, 15],
+      filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: 1100, // tata letak sama di HP, tablet, dan laptop
+        onclone: (doc) => {
+          [doc.documentElement, doc.body, doc.getElementById('pkbm-app-root')].forEach(n => {
+            if (n) n.style.cssText += ';overflow:visible !important;height:auto !important;';
+          });
+        }
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.avoid-page-break'] }
+    };
+
+    await new Promise(r => setTimeout(r, 150)); // beri waktu Tailwind membuat kelas CSS
+    const blob = await window.html2pdf().set(opt).from(el).outputPdf('blob');
+    if (!blob || blob.size < 1500) throw new Error('File PDF kosong');
+    showSyncOverlay(false);
+    await savePdfBlob(blob, filename);
+    showToast('PDF berhasil dibuat: ' + filename, 'success');
+  } catch (err) {
+    showSyncOverlay(false);
+    console.error('PDF error', err);
+    showToast('Gagal membuat PDF: ' + (err.message || err) + '. Membuka dialog cetak sebagai alternatif.', 'warning');
+    const pc = document.getElementById('print-area');
+    pc.innerHTML = innerHtml;
+    window.print();
+  } finally {
+    showSyncOverlay(false);
+  }
+}
+
+async function downloadRaportPdf() {
+  const card = document.getElementById('raport-sheet-card');
+  if (!card) { showToast('Lembar raport tidak ditemukan.', 'error'); return; }
+  const db = getDb();
+  const st = db.warga_belajar.find(w => w.id === activeRaportStudentId);
+  const rp = db.raport.find(r => r.warga_belajar_id === activeRaportStudentId);
+  const name = safeFileName(`Raport_${st ? st.nama_lengkap : 'Siswa'}_${rp && rp.tahun_ajaran ? rp.tahun_ajaran.replace('/', '-') : ''}_${rp && rp.semester ? rp.semester : ''}`).replace(/_+$/, '');
+  await exportHtmlToPdf(card.innerHTML, name + '.pdf');
+}
+
 function printOfficialRaport() {
   const sheetHtml = document.getElementById('raport-sheet-card').innerHTML;
   const printContainer = document.getElementById('print-area');
@@ -3441,9 +3562,7 @@ function exportPresensiToPdf() {
     </div>
   `;
 
-  const printContainer = document.getElementById('print-area');
-  printContainer.innerHTML = printHtml;
-  window.print();
+  exportHtmlToPdf(printHtml, safeFileName(`Rekap_Presensi_${selectedPresensiPaket}_${year}-${month}`) + '.pdf');
 }
 
 // EKSPOR NILAI: WORD (.DOC)
@@ -3659,9 +3778,7 @@ function exportNilaiToPdf() {
     </div>
   `;
 
-  const printContainer = document.getElementById('print-area');
-  printContainer.innerHTML = printHtml;
-  window.print();
+  exportHtmlToPdf(printHtml, safeFileName(`Rekap_Nilai_${selectedNilaiPaket}_${selectedNilaiMapel}_${year}-${month}`) + '.pdf');
 }
 
 // 8. ADMINISTRASI & KAS PKBM (ADMIN)
