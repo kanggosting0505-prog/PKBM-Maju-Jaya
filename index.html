@@ -96,6 +96,39 @@
       font-family: 'Inter', sans-serif;
     }
 
+
+    /* ===== KUNCI LAYOUT APLIKASI =====
+       Sidebar, header, dan menu bawah (HP) tidak ikut bergeser. Hanya isi halaman (#content-scroll) yang menggulir. */
+    #view-app {
+      height: 100%;
+      height: 100dvh;
+      min-height: 0 !important;
+      padding-bottom: 0 !important;
+      overflow: hidden;
+    }
+    #view-app > aside {
+      position: relative !important;
+      top: auto !important;
+      height: 100%;
+      min-height: 0 !important;
+      overflow: hidden;
+    }
+    #sidebar-nav { min-height: 0; overscroll-behavior: contain; }
+    #view-app > main { height: 100%; min-height: 0; overflow: hidden; }
+    #view-app > main > header { flex-shrink: 0; }
+    #content-scroll {
+      flex: 1 1 0%;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: max(6rem, calc(env(safe-area-inset-bottom, 0px) + 5.5rem)); /* ruang untuk menu bawah di HP */
+    }
+    @media (min-width: 768px) {
+      #content-scroll { padding-bottom: 0; }
+    }
+
     /* Glassmorphism helpers */
     .glass-card {
       background: rgba(255, 255, 255, 0.92);
@@ -382,8 +415,10 @@
       </header>
 
       <!-- Dynamic Content Body -->
-      <div id="content-body" class="p-4 md:p-8 flex-1 max-w-7xl mx-auto w-full">
-        <!-- Injected via routeTo() -->
+      <div id="content-scroll">
+        <div id="content-body" class="p-4 md:p-8 max-w-7xl mx-auto w-full">
+          <!-- Injected via routeTo() -->
+        </div>
       </div>
     </main>
 
@@ -1283,8 +1318,10 @@ function routeTo(tabId) {
     return;
   }
 
+  const tabChanged = currentTab !== tabId;
   currentTab = tabId;
   renderNavigation();
+  if (tabChanged) { const sc = document.getElementById('content-scroll'); if (sc) sc.scrollTop = 0; }
 
   const titleEl = document.getElementById('page-title');
   const subtitleEl = document.getElementById('page-subtitle');
@@ -2851,9 +2888,11 @@ function renderStudentRaportSheet(student, raport) {
   const kotaTerbit = raport.kota_terbit || profile.kota_terbit;
   const tanggalTerbit = raport.tanggal_terbit || profile.tanggal_cetak;
   const pkbmCleanTitle = getCleanPkbmName(profile.nama_pkbm);
+  const kopTitle = getKopTitleSingle(profile.nama_pkbm);
+  const kopEm = measureKopEm(kopTitle);
 
   return `
-    <div id="raport-sheet-card" class="bg-white rounded-2xl md:rounded-3xl p-6 md:p-12 border border-slate-300 shadow-xl max-w-[210mm] w-full min-h-[297mm] mx-auto space-y-6 text-slate-900 print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none">
+    <div id="raport-sheet-card" style="font-family:'Times New Roman',Times,serif;" class="bg-white rounded-2xl md:rounded-3xl p-6 md:p-12 border border-slate-300 shadow-xl max-w-[210mm] w-full min-h-[297mm] mx-auto space-y-6 text-slate-900 print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none">
       
       <!-- KOP SURAT RESMI: SIMETRIS, RATA TENGAH DENGAN PENYEIMBANG RUANG AGAR TEKS TIDAK TERPOTONG -->
       <div class="border-b-[3px] border-slate-900 pb-4 relative avoid-page-break">
@@ -2870,12 +2909,9 @@ function renderStudentRaportSheet(student, raport) {
             `}
           </div>
 
-          <!-- Teks KOP Rata Tengah Sempurna Tanpa Terpotong -->
-          <div class="flex-1 text-center px-1">
-            <h2 class="font-black uppercase tracking-tight text-slate-900 leading-tight">
-              <span class="block text-[11px] sm:text-sm md:text-[15px]">${getKopTitleLines(profile.nama_pkbm).line1}</span>
-              ${getKopTitleLines(profile.nama_pkbm).line2 ? `<span class="block text-sm sm:text-base md:text-[19px] mt-0.5">${getKopTitleLines(profile.nama_pkbm).line2}</span>` : ''}
-            </h2>
+          <!-- Teks KOP: satu baris, satu ukuran font (menyesuaikan lebar otomatis) -->
+          <div class="flex-1 text-center px-1 min-w-0" style="container-type:inline-size;">
+            <h2 class="font-black uppercase text-slate-900 leading-tight whitespace-nowrap" style="font-size:13px;font-size:min(19px, calc(100cqw / ${kopEm}));">${kopTitle}</h2>
             <p class="text-[11px] md:text-xs text-slate-700 font-semibold mt-1">Penyelenggara Pendidikan Nonformal Kesetaraan Paket A, Paket B, dan Paket C</p>
             <p class="text-[10px] md:text-[11px] text-slate-600 mt-0.5">Izin Operasional: ${profile.izin_operasional} • NPSN: ${profile.npsn}</p>
             <p class="text-[9px] md:text-[10px] text-slate-500 mt-0.5">${profile.alamat}</p>
@@ -3361,21 +3397,342 @@ async function exportHtmlToPdf(innerHtml, filename) {
   }
 }
 
-async function downloadRaportPdf() {
-  const card = document.getElementById('raport-sheet-card');
-  if (!card) { showToast('Lembar raport tidak ditemukan.', 'error'); return; }
+// ==============================================================================
+// RAPORT PDF NATIVE (jsPDF, teks vektor) - dipakai OLEH "Unduh PDF" DAN "Cetak"
+// Dua tombol memakai satu file PDF yang sama, sehingga hasil cetak = hasil unduh.
+// Semua ukuran dalam milimeter, kertas A4: margin kiri/kanan 15, atas 14, bawah 16.
+// ==============================================================================
+
+// jsPDF font standar (Times) hanya mengenal Latin-1; karakter lain diganti agar tidak rusak
+function pdfSafe(s) {
+  return String(s == null ? '' : s)
+    .replace(/[\u2018\u2019\u201A]/g, "'")
+    .replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/[\u2013\u2014\u2212]/g, '-')
+    .replace(/[\u2022\u00B7\u25CF]/g, '|')
+    .replace(/\u2026/g, '...')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[^\x20-\x7E\u00A1-\u00FF]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// Kop satu baris: "PUSAT KEGIATAN BELAJAR MASYARAKAT PKBM MAJU JAYA"
+function getKopTitleSingle(fullName) {
+  const l = getKopTitleLines(fullName);
+  return [l.line1, l.line2].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+// Lebar judul kop dalam satuan em (huruf tebal Times) -> dipakai untuk menyesuaikan ukuran font pratinjau
+function measureKopEm(text) {
+  try {
+    const c = measureKopEm._c || (measureKopEm._c = document.createElement('canvas').getContext('2d'));
+    c.font = 'bold 100px "Times New Roman", Times, serif';
+    return Math.max(1, c.measureText(text).width / 100).toFixed(2);
+  } catch (e) { return String(Math.max(1, text.length * 0.7)); }
+}
+
+// Gambar logo -> PNG berlatar putih (mendukung PNG/JPG/SVG/WEBP), sekaligus ambil rasio
+function loadLogoForPdf(url) {
+  return new Promise(resolve => {
+    if (!url) return resolve(null);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (!w || !h) return resolve(null);
+        const k = Math.min(1, 700 / Math.max(w, h));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(w * k));
+        c.height = Math.max(1, Math.round(h * k));
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        resolve({ data: c.toDataURL('image/png'), ratio: w / h });
+      } catch (e) { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+// Data yang dipakai lembar raport (sumber sama dengan pratinjau di layar)
+function collectRaportPdfData(student, raport) {
+  const profile = getInstitutionProfile();
+  const db = getDb();
+  const waliNama = raport.wali_kelas_nama || (db.guru[0]?.nama_lengkap || 'Dra. Sri Wahyuni, M.Pd.');
+  const waliObj = db.guru.find(g => g.nama_lengkap === waliNama);
+  let waliNip = '-';
+  if (raport.wali_kelas_nip && raport.wali_kelas_nip.trim() !== '') waliNip = raport.wali_kelas_nip.trim();
+  else if (waliObj && waliObj.nip_guru && waliObj.nip_guru.trim() !== '' && waliObj.nip_guru !== '-') waliNip = waliObj.nip_guru.trim();
+  const kepalaNama = (profile.nama_kepala || '').trim() || raport.kepala_pkbm_nama || '-';
+  let kepalaNip = '-';
+  if (profile.nip_kepala && profile.nip_kepala.trim() !== '' && profile.nip_kepala.trim() !== '-') kepalaNip = profile.nip_kepala.trim();
+  return {
+    kopTitle: getKopTitleSingle(profile.nama_pkbm),
+    kopSub: 'Penyelenggara Pendidikan Nonformal Kesetaraan Paket A, Paket B, dan Paket C',
+    izin: profile.izin_operasional, npsn: profile.npsn, alamat: profile.alamat,
+    logoUrl: profile.logo_url,
+    nama: student.nama_lengkap, nisn: student.nisn, paket: student.paket, tingkat: student.tingkat || '-',
+    tahun: raport.tahun_ajaran || '2026/2027', semester: raport.semester || 'Ganjil',
+    mapel: raport.nilai_mapel || [],
+    catatan: raport.catatan_wali || 'Warga belajar memiliki sikap disiplin, toleransi, dan bersosialisasi dengan sangat baik.',
+    predikatSikap: raport.predikat_sikap || 'Sangat Baik',
+    status: raport.status_kenaikan || 'Memenuhi Kriteria Penuntasan Modul',
+    kota: raport.kota_terbit || profile.kota_terbit, tanggal: raport.tanggal_terbit || profile.tanggal_cetak,
+    pkbmClean: getCleanPkbmName(profile.nama_pkbm),
+    waliNama, waliNip, kepalaNama, kepalaNip
+  };
+}
+
+// Menggambar seluruh raport. pdf = instance jsPDF, d = data, logo = {data, ratio} atau null
+function drawRaportPdf(pdf, d, logo) {
+  const PW = 210, PH = 297, ML = 15, CW = 180, MT = 14, YMAX = 281;
+  const PT = 25.4 / 72;                       // 1 pt dalam mm
+  const font = (size, style) => { pdf.setFont('times', style || 'normal'); pdf.setFontSize(size); };
+  const wrap = (s, w, size, style) => { font(size, style); return pdf.splitTextToSize(pdfSafe(s) || ' ', w); };
+  const put = (s, x, yy, size, style, align) => { font(size, style); pdf.text(pdfSafe(s), x, yy, align ? { align } : undefined); };
+  const width = (s, size, style) => { font(size, style); return pdf.getTextWidth(pdfSafe(s)); };
+  // baris teks ke-i di dalam kotak setinggi h (teks rata tengah vertikal, dengan jarak aman dari garis)
+  const bl = (top, h, lh, fs, n, i) => top + (h - n * lh) / 2 + (lh - fs * PT) / 2 + fs * PT * 0.73 + i * lh;
+
+  pdf.setTextColor(0, 0, 0); pdf.setDrawColor(0, 0, 0); pdf.setFillColor(255, 255, 255);
+
+  // ---------------- KOP ----------------
+  let y = MT;
+  const LOGO = 20, TXT_W = CW - 2 * (LOGO + 4), CX = ML + CW / 2;
+  const drawLogoFallback = () => {
+    pdf.setLineWidth(0.5); pdf.rect(ML, y, LOGO, LOGO, 'S');
+    put('PKBM', ML + LOGO / 2, y + LOGO / 2 + 1.5, 12, 'bold', 'center');
+  };
+  if (logo && logo.data) {
+    let w = LOGO, h = LOGO;
+    if (logo.ratio >= 1) h = LOGO / logo.ratio; else w = LOGO * logo.ratio;
+    try { pdf.addImage(logo.data, 'PNG', ML + (LOGO - w) / 2, y + (LOGO - h) / 2, w, h); } catch (e) { drawLogoFallback(); }
+  } else drawLogoFallback();
+
+  const title = pdfSafe(d.kopTitle).toUpperCase();
+  let ts = 15;
+  while (ts > 9 && width(title, ts, 'bold') > TXT_W) ts -= 0.25;       // satu baris, satu ukuran font
+  const titleLines = width(title, ts, 'bold') > TXT_W ? wrap(title, TXT_W, ts, 'bold') : [title];
+  let by = y + 5.0;
+  titleLines.forEach((l, i) => { if (i) by += ts * PT * 1.15; put(l, CX, by, ts, 'bold', 'center'); });
+  let ss = 9.5;
+  while (ss > 7 && width(d.kopSub, ss, 'bold') > TXT_W) ss -= 0.25;
+  by += 5.0; put(d.kopSub, CX, by, ss, 'bold', 'center');
+  const izinTxt = 'Izin Operasional: ' + (d.izin || '-') + '  |  NPSN: ' + (d.npsn || '-');
+  let is = 9;
+  while (is > 6.5 && width(izinTxt, is, 'normal') > TXT_W) is -= 0.25;
+  by += 4.4; put(izinTxt, CX, by, is, 'normal', 'center');
+  wrap(d.alamat || '-', TXT_W, 8.5, 'normal').forEach(l => { by += 3.9; put(l, CX, by, 8.5, 'normal', 'center'); });
+  const kopBottom = Math.max(y + LOGO, by + 1.5) + 2.0;
+  pdf.setLineWidth(0.9); pdf.line(ML, kopBottom, ML + CW, kopBottom);
+  pdf.setLineWidth(0.25); pdf.line(ML, kopBottom + 1.4, ML + CW, kopBottom + 1.4);
+  y = kopBottom + 1.4 + 5;
+
+  // ---------------- JUDUL ----------------
+  const ttl = 'LAPORAN HASIL BELAJAR (RAPORT) PENDIDIKAN KESETARAAN';
+  const tw = width(ttl, 10, 'bold') + 12, th = 7.5;
+  pdf.setFillColor(243, 243, 243); pdf.setLineWidth(0.3);
+  pdf.roundedRect(CX - tw / 2, y, tw, th, 3.75, 3.75, 'FD');
+  put(ttl, CX, bl(y, th, th, 10, 1, 0), 10, 'bold', 'center');
+  y += th + 5;
+
+  // ---------------- IDENTITAS ----------------
+  const COLW = 90, LBL = 34, VW = COLW - 4 - LBL - 3 - 3, LH = 4.7;
+  const L = [['Nama Warga Belajar', d.nama], ['Nomor Induk / NISN', d.nisn], ['Program Kesetaraan', d.paket]];
+  const R = [['Tingkat / Fase', d.tingkat], ['Tahun Pelajaran', d.tahun], ['Semester', d.semester]];
+  const rh = L.map((r, i) => Math.max(wrap(r[1], VW, 9.5, 'bold').length, wrap(R[i][1], VW, 9.5, 'bold').length) * LH + 1.4);
+  const idH = rh.reduce((a, b) => a + b, 0) + 7;
+  pdf.setFillColor(247, 247, 247); pdf.setLineWidth(0.3);
+  pdf.roundedRect(ML, y, CW, idH, 2, 2, 'FD');
+  let ry = y + 3.5;
+  L.forEach((r, i) => {
+    [[ML, r], [ML + COLW, R[i]]].forEach(([x0, row]) => {
+      const first = ry + 0.7 + 3.4;
+      put(row[0], x0 + 4, first, 9.5, 'normal');
+      put(':', x0 + 4 + LBL, first, 9.5, 'normal');
+      wrap(row[1], VW, 9.5, 'bold').forEach((ln, k) => put(ln, x0 + 4 + LBL + 3, first + k * LH, 9.5, 'bold'));
+    });
+    ry += rh[i];
+  });
+  y += idH + 6;
+
+  // ---------------- TABEL ----------------
+  const COLS = [9, 52, 21, 18, 80], HH = 8, PADX = 2.5;
+  const colX = []; COLS.reduce((a, w) => { colX.push(a); return a + w; }, ML);
+  put('A. CAPAIAN PEMBELAJARAN & PENUNTASAN MODUL', ML, y + 3.2, 10, 'bold');
+  y += 6;
+  const tableHeader = yy => {
+    pdf.setFillColor(236, 236, 236); pdf.setLineWidth(0.25);
+    pdf.rect(ML, yy, CW, HH, 'FD');
+    colX.forEach((x, i) => { if (i > 0) pdf.line(x, yy, x, yy + HH); });
+    const b = bl(yy, HH, HH, 9.5, 1, 0);
+    put('No', colX[0] + COLS[0] / 2, b, 9.5, 'bold', 'center');
+    put('Mata Pelajaran', colX[1] + PADX, b, 9.5, 'bold');
+    put('Nilai Akhir', colX[2] + COLS[2] / 2, b, 9.5, 'bold', 'center');
+    put('Predikat', colX[3] + COLS[3] / 2, b, 9.5, 'bold', 'center');
+    put('Deskripsi Capaian Kompetensi', colX[4] + PADX, b, 9.5, 'bold');
+    return yy + HH;
+  };
+  y = tableHeader(y);
+  (d.mapel.length ? d.mapel : [{ mapel: '-', akhir: '-', predikat: '-', capaian: '-' }]).forEach((m, idx) => {
+    const mapL = wrap(m.mapel, COLS[1] - 2 * PADX, 9.5, 'bold');
+    const capL = wrap(m.capaian || '-', COLS[4] - 2 * PADX, 9, 'normal');
+    const lhM = 9.5 * PT * 1.32, lhC = 9 * PT * 1.32;
+    const h = Math.max(9.5, Math.max(mapL.length * lhM, capL.length * lhC) + 5);
+    if (y + h > YMAX) { pdf.addPage('a4', 'portrait'); y = tableHeader(MT); }
+    pdf.setLineWidth(0.25); pdf.setFillColor(255, 255, 255);
+    pdf.rect(ML, y, CW, h, 'S');
+    colX.forEach((x, i) => { if (i > 0) pdf.line(x, y, x, y + h); });
+    put(String(idx + 1), colX[0] + COLS[0] / 2, bl(y, h, lhM, 9.5, 1, 0), 9.5, 'normal', 'center');
+    mapL.forEach((ln, k) => put(ln, colX[1] + PADX, bl(y, h, lhM, 9.5, mapL.length, k), 9.5, 'bold'));
+    put(String(m.akhir), colX[2] + COLS[2] / 2, bl(y, h, lhM, 10, 1, 0), 10, 'bold', 'center');
+    put(String(m.predikat), colX[3] + COLS[3] / 2, bl(y, h, lhM, 9.5, 1, 0), 9.5, 'bold', 'center');
+    capL.forEach((ln, k) => put(ln, colX[4] + PADX, bl(y, h, lhC, 9, capL.length, k), 9, 'normal'));
+    y += h;
+  });
+  y += 6;
+
+  // ---------------- B & C ----------------
+  const BW = 88, PADB = 3.5, LHB = 4.4, INW = BW - 2 * PADB;
+  const bL = wrap(d.catatan, INW, 9.5, 'normal');
+  const cIntro = wrap('Berdasarkan hasil evaluasi portofolio modul tutorial dan asesmen mandiri:', INW, 9.5, 'normal');
+  const sL = wrap(d.status, INW - 6, 9.5, 'bold');
+  const tB = PADB + 3.0, t1 = tB + 5.2;
+  const bPred = t1 + (bL.length - 1) * LHB + 5.4;
+  const bBottom = bPred + PADB + 0.8;
+  const cLast = t1 + (cIntro.length - 1) * LHB;
+  const badgeTop = cLast + 2.6, badgeH = sL.length * LHB + 3.4;
+  const cBottom = badgeTop + badgeH + PADB;
+  const boxH = Math.max(bBottom, cBottom);
+
+  // ---------------- TANDA TANGAN (dihitung dulu agar B, C, dan TTD tidak terpisah halaman) ----------------
+  const SC = [ML + 30, ML + 90, ML + 150], SW = 58, SPACE = 22, NLH = 4.7;
+  const cols = [
+    { head: ['Mengetahui,', 'Orang Tua / Wali Siswa'], name: '( ............................ )', nip: null, line: false },
+    { head: [d.kota + ', ' + d.tanggal, 'Tutor Pembimbing / Wali Kelas'], name: d.waliNama, nip: d.waliNip, line: true },
+    { head: ['Kepala ' + d.pkbmClean + ',', 'Penyelenggara Pendidikan Kesetaraan'], name: d.kepalaNama, nip: d.kepalaNip, line: true }
+  ];
+  cols.forEach(c => {
+    c.headL = [].concat(...c.head.map(t => wrap(t, SW, 9.5, 'normal')));
+    c.nameL = wrap(c.name, SW, 10, 'bold');
+  });
+  const headH = Math.max(...cols.map(c => c.headL.length)) * LHB;
+  const maxName = Math.max(...cols.map(c => c.nameL.length));
+  const sigH = headH + SPACE + maxName * NLH + 2 + 6;
+  if (y + boxH + 7 + sigH > YMAX) { pdf.addPage('a4', 'portrait'); y = MT; }
+
+  pdf.setLineWidth(0.3);
+  [[ML, 'B'], [ML + BW + 4, 'C']].forEach(([x0, k]) => {
+    pdf.setFillColor(250, 250, 250);
+    pdf.roundedRect(x0, y, BW, boxH, 2, 2, 'FD');
+    put(k === 'B' ? 'B. Perkembangan Karakter & Sikap' : 'C. Status Ketuntasan Modul Belajar', x0 + PADB, y + tB, 10, 'bold');
+  });
+  bL.forEach((ln, i) => put(ln, ML + PADB, y + t1 + i * LHB, 9.5, 'normal'));
+  put('Predikat Sikap:', ML + PADB, y + bPred, 9.5, 'normal');
+  put(d.predikatSikap, ML + PADB + width('Predikat Sikap:', 9.5, 'normal') + 1.4, y + bPred, 9.5, 'bold');
+  const cx0 = ML + BW + 4;
+  cIntro.forEach((ln, i) => put(ln, cx0 + PADB, y + t1 + i * LHB, 9.5, 'normal'));
+  const bw = Math.min(INW, Math.max(...sL.map(l => width(l, 9.5, 'bold'))) + 6);
+  pdf.setFillColor(214, 214, 214); pdf.setLineWidth(0.3);
+  pdf.roundedRect(cx0 + PADB, y + badgeTop, bw, badgeH, 1.8, 1.8, 'FD');
+  sL.forEach((ln, i) => put(ln, cx0 + PADB + 3, bl(y + badgeTop, badgeH, LHB, 9.5, sL.length, i), 9.5, 'bold'));
+  y += boxH + 7;
+
+  cols.forEach((c, i) => {
+    c.headL.forEach((ln, k) => put(ln, SC[i], y + 3.6 + k * LHB, 9.5, 'normal', 'center'));
+    // nama yang lebih pendek turun ke bawah agar garis & NIP semua kolom sejajar
+    const n1 = y + headH + SPACE + 3.6 + (maxName - c.nameL.length) * NLH;
+    c.nameL.forEach((ln, k) => put(ln, SC[i], n1 + k * NLH, 10, 'bold', 'center'));
+    if (c.line) {
+      const lastB = n1 + (c.nameL.length - 1) * NLH;
+      const lw = Math.min(SW, Math.max(42, Math.max(...c.nameL.map(l => width(l, 10, 'bold'))) + 8));
+      pdf.setLineWidth(0.35); pdf.line(SC[i] - lw / 2, lastB + 1.9, SC[i] + lw / 2, lastB + 1.9);
+      put('NIP: ' + c.nip, SC[i], lastB + 1.9 + 4.3, 9, 'normal', 'center');
+    }
+  });
+
+  // nomor halaman bila lebih dari satu
+  const total = pdf.getNumberOfPages();
+  if (total > 1) for (let p = 1; p <= total; p++) { pdf.setPage(p); put('Halaman ' + p + ' dari ' + total, CX, 290.5, 8, 'normal', 'center'); }
+}
+
+async function buildRaportPdfBlob(student, raport) {
+  await loadScriptOnce(JSPDF_URL, () => !!(window.jspdf && window.jspdf.jsPDF));
+  const d = collectRaportPdfData(student, raport);
+  const logo = await loadLogoForPdf(d.logoUrl);
+  const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+  pdf.setProperties({ title: 'Raport ' + pdfSafe(d.nama), subject: 'Laporan Hasil Belajar', author: pdfSafe(d.kopTitle) });
+  drawRaportPdf(pdf, d, logo);
+  const blob = pdf.output('blob');
+  if (!blob || blob.size < 1000) throw new Error('File PDF kosong');
+  return blob;
+}
+
+// Cetak = membuka file PDF yang SAMA dengan hasil unduhan, lalu memanggil dialog cetak
+async function printPdfBlob(blob, filename) {
+  const ua = navigator.userAgent || '';
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!isMobile) {
+    const url = URL.createObjectURL(blob);
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;';
+    iframe.onload = () => setTimeout(() => {
+      try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+      catch (e) { window.open(url, '_blank'); }
+    }, 700);
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    setTimeout(() => { try { document.body.removeChild(iframe); } catch (e) {} URL.revokeObjectURL(url); }, 180000);
+    return;
+  }
+  // HP/tablet: dialog cetak tidak bisa membuka PDF dari halaman web, jadi PDF disimpan/dibagikan lalu dicetak dari penampil PDF
+  await savePdfBlob(blob, filename);
+  showToast('PDF raport siap. Buka file PDF-nya lalu pilih Cetak (di iPhone/iPad: menu Bagikan > Cetak).', 'success');
+}
+
+function getActiveRaportContext() {
   const db = getDb();
   const st = db.warga_belajar.find(w => w.id === activeRaportStudentId);
   const rp = db.raport.find(r => r.warga_belajar_id === activeRaportStudentId);
-  const name = safeFileName(`Raport_${st ? st.nama_lengkap : 'Siswa'}_${rp && rp.tahun_ajaran ? rp.tahun_ajaran.replace('/', '-') : ''}_${rp && rp.semester ? rp.semester : ''}`).replace(/_+$/, '');
-  await exportHtmlToPdf(card.innerHTML, name + '.pdf');
+  if (!st || !rp) return null;
+  const name = safeFileName(`Raport_${st.nama_lengkap}_${rp.tahun_ajaran ? rp.tahun_ajaran.replace('/', '-') : ''}_${rp.semester || ''}`).replace(/_+$/, '') + '.pdf';
+  return { st, rp, name };
 }
 
-function printOfficialRaport() {
-  const sheetHtml = document.getElementById('raport-sheet-card').innerHTML;
-  const printContainer = document.getElementById('print-area');
-  printContainer.innerHTML = sheetHtml;
-  window.print();
+async function downloadRaportPdf() {
+  const ctx = getActiveRaportContext();
+  if (!ctx) { showToast('Lembar raport tidak ditemukan.', 'error'); return; }
+  showSyncOverlay(true, 'Membuat file PDF...');
+  try {
+    const blob = await buildRaportPdfBlob(ctx.st, ctx.rp);
+    showSyncOverlay(false);
+    await savePdfBlob(blob, ctx.name);
+    showToast('PDF berhasil dibuat: ' + ctx.name, 'success');
+  } catch (err) {
+    showSyncOverlay(false);
+    console.error('PDF raport error', err);
+    showToast('Gagal membuat PDF: ' + (err.message || err) + '. Periksa koneksi internet lalu coba lagi.', 'error');
+  }
+}
+
+async function printOfficialRaport() {
+  const ctx = getActiveRaportContext();
+  if (!ctx) { showToast('Lembar raport tidak ditemukan.', 'error'); return; }
+  showSyncOverlay(true, 'Menyiapkan lembar cetak...');
+  try {
+    const blob = await buildRaportPdfBlob(ctx.st, ctx.rp);
+    showSyncOverlay(false);
+    await printPdfBlob(blob, ctx.name);
+  } catch (err) {
+    showSyncOverlay(false);
+    console.error('Cetak raport error', err);
+    showToast('Gagal menyiapkan cetak: ' + (err.message || err) + '. Periksa koneksi internet lalu coba lagi.', 'error');
+  }
 }
 
 // ==============================================================================
