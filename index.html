@@ -513,7 +513,7 @@
  * ==============================================================================
  */
 
-let IS_PREVIEW = true;
+let IS_PREVIEW = false;
 let SUPABASE_URL = "";
 let SUPABASE_ANON_KEY = "";
 let supabaseClient = null;
@@ -3179,22 +3179,31 @@ function saveRaportValues(e, raportId) {
 }
 
 // ==============================================================================
-// UNDUH PDF LANGSUNG (tanpa dialog cetak) - html2pdf.js dimuat saat dibutuhkan
+// UNDUH PDF LANGSUNG (tanpa dialog cetak)
+// html2canvas (render) + jsPDF (susun halaman A4) dimuat saat dibutuhkan
 // ==============================================================================
-const HTML2PDF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-let _html2pdfPromise = null;
+const HTML2CANVAS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+const JSPDF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+const _scriptPromises = {};
 
-function loadHtml2Pdf() {
-  if (window.html2pdf) return Promise.resolve();
-  if (_html2pdfPromise) return _html2pdfPromise;
-  _html2pdfPromise = new Promise((resolve, reject) => {
+function loadScriptOnce(url, isReady) {
+  if (isReady()) return Promise.resolve();
+  if (_scriptPromises[url]) return _scriptPromises[url];
+  _scriptPromises[url] = new Promise((resolve, reject) => {
     const sc = document.createElement('script');
-    sc.src = HTML2PDF_URL;
-    sc.onload = () => (window.html2pdf ? resolve() : reject(new Error('Pustaka PDF tidak termuat')));
-    sc.onerror = () => { _html2pdfPromise = null; reject(new Error('Gagal memuat pustaka PDF (cek koneksi internet)')); };
+    sc.src = url;
+    sc.onload = () => (isReady() ? resolve() : reject(new Error('Pustaka PDF tidak termuat')));
+    sc.onerror = () => { delete _scriptPromises[url]; reject(new Error('Gagal memuat pustaka PDF (cek koneksi internet)')); };
     document.head.appendChild(sc);
   });
-  return _html2pdfPromise;
+  return _scriptPromises[url];
+}
+
+async function loadPdfLibs() {
+  await Promise.all([
+    loadScriptOnce(HTML2CANVAS_URL, () => typeof window.html2canvas === 'function'),
+    loadScriptOnce(JSPDF_URL, () => !!(window.jspdf && window.jspdf.jsPDF))
+  ]);
 }
 
 function safeFileName(name) {
@@ -3205,7 +3214,7 @@ async function savePdfBlob(blob, filename) {
   const file = new File([blob], filename, { type: 'application/pdf' });
   const ua = navigator.userAgent || '';
   const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  // iOS (terutama saat dipasang di layar utama) sering gagal mengunduh langsung -> pakai menu Bagikan > Simpan ke File
+  // iOS sering gagal mengunduh langsung -> pakai menu Bagikan > Simpan ke File
   if (isIOS && navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: filename });
@@ -3224,40 +3233,117 @@ async function savePdfBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-// innerHtml = isi dokumen (sudah berformat A4). Hasil: file PDF A4 diunduh/disimpan.
-async function exportHtmlToPdf(innerHtml, filename) {
-  showSyncOverlay(true, 'Membuat file PDF...');
-  try {
-    await loadHtml2Pdf();
+// Tentukan posisi potong halaman agar baris tabel / blok tanda tangan tidak terbelah.
+// totalH, pageH, breakpoints, avoidRanges semuanya dalam satuan yang sama (px CSS).
+function computePageBreaks(totalH, pageH, breakpoints, avoidRanges) {
+  const cuts = [0];
+  let y0 = 0;
+  while (totalH - y0 > pageH + 1) {
+    const limit = y0 + pageH;
+    let best = null;
+    for (const bp of breakpoints) {
+      if (bp <= y0 + pageH * 0.4) continue;
+      if (bp > limit + 0.5) break;
+      if (avoidRanges.some(r => bp > r[0] + 1 && bp < r[1] - 1)) continue;
+      best = bp;
+    }
+    if (best === null) best = limit;
+    cuts.push(best);
+    y0 = best;
+  }
+  cuts.push(totalH);
+  return cuts;
+}
 
+// innerHtml = isi dokumen. Hasil: file PDF A4 (margin 15mm kiri/kanan) diunduh/disimpan.
+async function exportHtmlToPdf(innerHtml, filename) {
+  const PAGE_W = 210, PAGE_H = 297;
+  const M_TOP = 14, M_SIDE = 15, M_BOTTOM = 16;
+  const CONTENT_W = PAGE_W - 2 * M_SIDE;            // 180 mm
+  const CONTENT_PX = Math.round(CONTENT_W / 25.4 * 96); // 680 px
+
+  showSyncOverlay(true, 'Membuat file PDF...');
+  let wrap = null;
+  try {
+    await loadPdfLibs();
+
+    // Pasang dokumen di halaman (di belakang aplikasi) agar ukurannya terukur dengan benar
+    wrap = document.createElement('div');
+    wrap.style.cssText = `position:fixed;left:0;top:0;width:${CONTENT_PX}px;z-index:-1;pointer-events:none;background:#fff;`;
     const el = document.createElement('div');
     el.className = 'pdf-bw';
-    el.style.cssText = "width:180mm;background:#fff;color:#000;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.35;";
+    el.style.cssText = `width:${CONTENT_PX}px;box-sizing:border-box;background:#fff;color:#000;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.35;`;
     el.innerHTML = innerHtml;
+    wrap.appendChild(el);
+    document.body.appendChild(wrap);
 
-    const opt = {
-      margin: [14, 15, 16, 15],
-      filename,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: 1100, // tata letak sama di HP, tablet, dan laptop
-        onclone: (doc) => {
-          [doc.documentElement, doc.body, doc.getElementById('pkbm-app-root')].forEach(n => {
-            if (n) n.style.cssText += ';overflow:visible !important;height:auto !important;';
-          });
-        }
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.avoid-page-break'] }
-    };
+    await new Promise(r => setTimeout(r, 250)); // beri waktu Tailwind membuat kelas CSS & gambar termuat
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
 
-    await new Promise(r => setTimeout(r, 150)); // beri waktu Tailwind membuat kelas CSS
-    const blob = await window.html2pdf().set(opt).from(el).outputPdf('blob');
+    const totalH = el.scrollHeight;
+    const base = el.getBoundingClientRect().top;
+
+    // Titik potong yang diperbolehkan: ujung baris tabel & ujung/awal blok
+    const bps = [];
+    const ranges = [];
+    el.querySelectorAll('tr, .avoid-page-break').forEach(n => {
+      const r = n.getBoundingClientRect();
+      bps.push(r.bottom - base);
+      if (n.classList.contains('avoid-page-break')) {
+        bps.push(r.top - base);
+        ranges.push([r.top - base, r.bottom - base]);
+      }
+    });
+    el.querySelectorAll(':scope > *, :scope > * > *').forEach(n => {
+      const r = n.getBoundingClientRect();
+      bps.push(r.top - base);
+      bps.push(r.bottom - base);
+    });
+    const breakpoints = Array.from(new Set(bps.map(v => Math.round(v)))).filter(v => v > 0 && v < totalH).sort((a, b) => a - b);
+
+    // Batasi ukuran kanvas agar aman di HP (iOS maks. sekitar 16 juta piksel)
+    const scale = Math.max(1, Math.min(2, Math.sqrt(14e6 / (CONTENT_PX * totalH))));
+
+    const canvas = await window.html2canvas(el, {
+      scale,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      scrollX: 0,
+      scrollY: 0,
+      x: 0,
+      y: 0,
+      width: CONTENT_PX,
+      height: totalH,
+      windowWidth: 1100,                 // tata letak sama di HP, tablet, dan laptop
+      windowHeight: totalH + 200,
+      onclone: (doc) => {
+        [doc.documentElement, doc.body, doc.getElementById('pkbm-app-root')].forEach(n => {
+          if (n) n.style.cssText += ';overflow:visible !important;height:auto !important;';
+        });
+      }
+    });
+
+    const pageHpx = (PAGE_H - M_TOP - M_BOTTOM) / CONTENT_W * CONTENT_PX;
+    const cuts = computePageBreaks(totalH, pageHpx, breakpoints, ranges);
+
+    const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const sy = Math.round(cuts[i] * scale);
+      const sh = Math.max(1, Math.min(canvas.height - sy, Math.round((cuts[i + 1] - cuts[i]) * scale)));
+      const slice = document.createElement('canvas');
+      slice.width = canvas.width;
+      slice.height = sh;
+      const ctx = slice.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, slice.width, slice.height);
+      ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+
+      if (i > 0) pdf.addPage('a4', 'portrait');
+      const hMm = sh / canvas.width * CONTENT_W;
+      pdf.addImage(slice.toDataURL('image/jpeg', 0.95), 'JPEG', M_SIDE, M_TOP, CONTENT_W, hMm, undefined, 'FAST');
+    }
+
+    const blob = pdf.output('blob');
     if (!blob || blob.size < 1500) throw new Error('File PDF kosong');
     showSyncOverlay(false);
     await savePdfBlob(blob, filename);
@@ -3270,6 +3356,7 @@ async function exportHtmlToPdf(innerHtml, filename) {
     pc.innerHTML = innerHtml;
     window.print();
   } finally {
+    if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
     showSyncOverlay(false);
   }
 }
