@@ -3727,7 +3727,7 @@ function drawRaportPdf(pdf, d, logo) {
   const SC = [ML + 30, ML + 90, ML + 150], SW = 58, SPACE = 22, NLH = 4.7;
   const cols = [
     { head: ['Mengetahui,', 'Orang Tua / Wali Siswa'], name: '( ............................ )', nip: null, line: false },
-    { head: [d.kota + ', ' + d.tanggal, 'Tutor Pembimbing / Wali Kelas'], name: d.waliNama, nip: d.waliNip, line: true },
+    { dateLine: d.kota + ', ' + d.tanggal, head: ['Tutor Pembimbing / Wali Kelas'], name: d.waliNama, nip: d.waliNip, line: true },
     { head: ['Kepala ' + d.pkbmClean + ',', 'Penyelenggara Pendidikan Kesetaraan'], name: d.kepalaNama, nip: d.kepalaNip, line: true }
   ];
   cols.forEach(c => {
@@ -3737,7 +3737,8 @@ function drawRaportPdf(pdf, d, logo) {
   const headH = Math.max(...cols.map(c => c.headL.length)) * LHB;
   const maxName = Math.max(...cols.map(c => c.nameL.length));
   // tinggi isi tanda tangan (dari baris pertama sampai NIP) -> blok TTD dirapatkan ke batas bawah area cetak
-  const sigContentH = headH + SPACE + 3.6 + (maxName - 1) * NLH + 1.9 + 4.3 + 0.8;
+  const DATE_ROW = LHB;                                   // tanggal & tempat satu baris di atas keterangan lain
+  const sigContentH = DATE_ROW + headH + SPACE + 3.6 + (maxName - 1) * NLH + 1.9 + 4.3 + 0.8;
   const SIGB = PH - 10;
   if (y + boxH + 7 + sigContentH > SIGB) { pdf.addPage('a4', 'portrait'); y = MT; }
 
@@ -3759,9 +3760,10 @@ function drawRaportPdf(pdf, d, logo) {
   y = Math.max(y + boxH + 7, SIGB - sigContentH);
 
   cols.forEach((c, i) => {
-    c.headL.forEach((ln, k) => put(ln, SC[i], y + 3.6 + k * LHB, 9.5, 'normal', 'center'));
+    if (c.dateLine) put(c.dateLine, SC[i], y + 3.6, 9.5, 'normal', 'center');
+    c.headL.forEach((ln, k) => put(ln, SC[i], y + DATE_ROW + 3.6 + k * LHB, 9.5, 'normal', 'center'));
     // nama yang lebih pendek turun ke bawah agar garis & NIP semua kolom sejajar
-    const n1 = y + headH + SPACE + 3.6 + (maxName - c.nameL.length) * NLH;
+    const n1 = y + DATE_ROW + headH + SPACE + 3.6 + (maxName - c.nameL.length) * NLH;
     c.nameL.forEach((ln, k) => put(ln, SC[i], n1 + k * NLH, 10, 'bold', 'center'));
     if (c.line) {
       const lastB = n1 + (c.nameL.length - 1) * NLH;
@@ -4033,21 +4035,23 @@ function drawRekapPdf(pdf, model, d, logo) {
   const headerH = H1 + H2;
 
   const drawHeader = yy => {
-    pdf.setLineWidth(0.2); pdf.setFillColor(222, 222, 222);
+    // jsPDF memakai warna teks (hitam) juga sebagai warna isian setelah text() -> isian header disetel ulang SEBELUM setiap kotak
+    const hdrFill = () => pdf.setFillColor(222, 222, 222);
+    pdf.setLineWidth(0.2);
     let i = 0;
     while (i < cols.length) {
       const c = cols[i];
       if (!c.group) {
-        pdf.rect(xs[i], yy, c.w, headerH, 'FD');
+        hdrFill(); pdf.rect(xs[i], yy, c.w, headerH, 'FD');
         put(c.label, xs[i] + c.w / 2, bl(yy, headerH, headerH, 8.5, 1, 0), 8.5, 'bold', 'center');
         i++;
       } else {
         let j = i, gw = 0;
         while (j < cols.length && cols[j].group === c.group) { gw += cols[j].w; j++; }
-        pdf.rect(xs[i], yy, gw, H1, 'FD');
+        hdrFill(); pdf.rect(xs[i], yy, gw, H1, 'FD');
         put(c.group, xs[i] + gw / 2, bl(yy, H1, H1, 8.5, 1, 0), 8.5, 'bold', 'center');
         for (let k = i; k < j; k++) {
-          pdf.rect(xs[k], yy + H1, cols[k].w, H2, 'FD');
+          hdrFill(); pdf.rect(xs[k], yy + H1, cols[k].w, H2, 'FD');
           put(cols[k].label, xs[k] + cols[k].w / 2, bl(yy + H1, H2, H2, 8, 1, 0), 8, 'bold', 'center');
         }
         i = j;
