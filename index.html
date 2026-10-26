@@ -1386,6 +1386,73 @@ function routeTo(tabId) {
  */
 
 // 1. DASHBOARD VIEW
+// ===== DASHBOARD: SISWA YANG TIDAK HADIR PADA TANGGAL TERPILIH =====
+let dashAbsenDate = '';
+function localDateStr(dt) {
+  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+}
+function renderDashAbsenInner() {
+  const db = getDb();
+  const date = dashAbsenDate;
+  const [y, m, d] = date.split('-').map(Number);
+  const hari = REKAP_DAYS[new Date(y, m - 1, d).getDay()];
+  const label = `${hari}, ${d} ${REKAP_MONTHS[m]} ${y}`;
+  const logs = db.presensi.filter(p => p.tanggal === date);
+  const order = { Alfa: 0, Sakit: 1, Izin: 2 };
+  const absent = logs.filter(p => p.status_kehadiran !== 'Hadir').sort((a, b) => (order[a.status_kehadiran] ?? 9) - (order[b.status_kehadiran] ?? 9));
+  const hadir = logs.length - absent.length;
+  const count = st => absent.filter(p => p.status_kehadiran === st).length;
+  const badge = { Alfa: 'bg-rose-100 text-rose-700', Sakit: 'bg-amber-100 text-amber-700', Izin: 'bg-blue-100 text-blue-700' };
+  const rows = absent.map((p, i) => {
+    const st = db.warga_belajar.find(w => w.id === p.warga_belajar_id);
+    return `<tr class="border-t border-slate-100">
+      <td class="p-2.5 text-center text-slate-500">${i + 1}</td>
+      <td class="p-2.5 font-semibold text-slate-800">${st ? st.nama_lengkap : '(data siswa tidak ditemukan)'}</td>
+      <td class="p-2.5 text-slate-600">${st ? st.paket : (p.paket || '-')}</td>
+      <td class="p-2.5"><span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${badge[p.status_kehadiran] || 'bg-slate-100 text-slate-600'}">${p.status_kehadiran}</span></td>
+      <td class="p-2.5 text-slate-600">${p.keterangan || '-'}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="font-extrabold text-slate-800 text-sm md:text-base">Warga Belajar Tidak Hadir</h3>
+        <p class="text-xs text-slate-500 mt-0.5">Hari <strong class="text-slate-800">${label}</strong></p>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-xs font-bold text-slate-700">Pilih tanggal:</label>
+        <input type="date" value="${date}" onchange="dashAbsenDate = this.value || dashAbsenDate; refreshDashAbsen();" class="px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-medium">
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-2 mb-3 text-[11px] font-semibold">
+      <span class="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">Hadir: ${hadir}</span>
+      <span class="px-2.5 py-1 rounded-full bg-rose-100 text-rose-700">Alfa: ${count('Alfa')}</span>
+      <span class="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Sakit: ${count('Sakit')}</span>
+      <span class="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700">Izin: ${count('Izin')}</span>
+    </div>
+    ${absent.length ? `
+      <div class="overflow-x-auto rounded-xl border border-slate-200">
+        <table class="w-full text-left text-xs">
+          <thead><tr class="bg-slate-50 text-slate-600 font-semibold">
+            <th class="p-2.5 text-center w-10">No</th><th class="p-2.5">Nama Warga Belajar</th><th class="p-2.5">Program</th><th class="p-2.5">Status</th><th class="p-2.5">Keterangan</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>` : `
+      <div class="p-5 text-center text-xs text-slate-500 rounded-xl bg-slate-50 border border-dashed border-slate-300">
+        ${logs.length ? 'Semua warga belajar yang diabsen hadir pada tanggal ini.' : 'Belum ada data presensi pada tanggal ini.'}
+      </div>`}
+  `;
+}
+function renderDashAbsenCard() {
+  if (!dashAbsenDate) dashAbsenDate = localDateStr(new Date());
+  return `<div id="dash-absen-card" class="glass-card rounded-2xl p-5 md:p-6 border border-slate-200/80">${renderDashAbsenInner()}</div>`;
+}
+function refreshDashAbsen() {
+  const el = document.getElementById('dash-absen-card');
+  if (el) el.innerHTML = renderDashAbsenInner();
+}
+
 function renderDashboardView() {
   const db = getDb();
   const profile = getInstitutionProfile();
@@ -1612,6 +1679,9 @@ function renderDashboardView() {
           </div>
         </div>
       </div>
+
+      <!-- Warga belajar tidak hadir sesuai tanggal -->
+      ${renderDashAbsenCard()}
 
       <!-- Quick Action: Presensi Nilai & Raport A4 -->
       <div class="glass-card rounded-2xl p-6 border border-slate-200/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -2332,13 +2402,13 @@ function renderPresensiView() {
             
             <div class="flex flex-wrap items-center gap-2">
               <button onclick="exportPresensiToPdf()" class="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
-                <i data-lucide="printer" class="w-4 h-4"></i> Unduh / Cetak PDF
+                <i data-lucide="printer" class="w-4 h-4"></i> Unduh PDF (F4)
               </button>
               <button onclick="exportPresensiToWord()" class="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
-                <i data-lucide="file-text" class="w-4 h-4"></i> Unduh Word (.doc)
+                <i data-lucide="file-text" class="w-4 h-4"></i> Unduh Word (.docx)
               </button>
               <button onclick="exportPresensiToExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
-                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Unduh Excel (.xls)
+                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Unduh Excel (.xlsx)
               </button>
             </div>
           </div>
@@ -2601,13 +2671,13 @@ function renderPenilaianView() {
 
             <div class="flex flex-wrap items-center gap-2">
               <button onclick="exportNilaiToPdf()" class="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
-                <i data-lucide="printer" class="w-4 h-4"></i> Unduh / Cetak PDF
+                <i data-lucide="printer" class="w-4 h-4"></i> Unduh PDF (F4)
               </button>
               <button onclick="exportNilaiToWord()" class="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
-                <i data-lucide="file-text" class="w-4 h-4"></i> Unduh Word (.doc)
+                <i data-lucide="file-text" class="w-4 h-4"></i> Unduh Word (.docx)
               </button>
               <button onclick="exportNilaiToExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
-                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Unduh Excel (.xls)
+                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Unduh Excel (.xlsx)
               </button>
             </div>
           </div>
@@ -2969,6 +3039,12 @@ function renderStudentRaportSheet(student, raport) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <!-- JUMLAH NILAI & NILAI RATA-RATA -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs avoid-page-break">
+        <table class="w-full border border-slate-300 rounded-lg overflow-hidden"><tr><td class="p-2.5 font-bold bg-slate-100 border-r border-slate-300">Jumlah Nilai</td><td class="p-2.5 font-black text-center w-28">${raportTotals(raport.nilai_mapel).jumlah}</td></tr></table>
+        <table class="w-full border border-slate-300 rounded-lg overflow-hidden"><tr><td class="p-2.5 font-bold bg-slate-100 border-r border-slate-300">Nilai Rata-rata</td><td class="p-2.5 font-black text-center w-28">${raportTotals(raport.nilai_mapel).rata}</td></tr></table>
       </div>
 
       <!-- CATATAN SIKAP & STATUS KELULUSAN / KETUNTASAN MODUL -->
@@ -3423,7 +3499,7 @@ function getKopTitleSingle(fullName) {
   return [l.line1, l.line2].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
-// Lebar judul kop dalam satuan em (huruf tebal Times) -> dipakai untuk menyesuaikan ukuran font pratinjau
+// Lebar judul kop dalam satuan em (huruf tebal Times) -> dipakai untuk menyesuaikan ukuran font pratinjau & Word
 function measureKopEm(text) {
   try {
     const c = measureKopEm._c || (measureKopEm._c = document.createElement('canvas').getContext('2d'));
@@ -3487,22 +3563,24 @@ function collectRaportPdfData(student, raport) {
   };
 }
 
-// Menggambar seluruh raport. pdf = instance jsPDF, d = data, logo = {data, ratio} atau null
-function drawRaportPdf(pdf, d, logo) {
-  const PW = 210, PH = 297, ML = 15, CW = 180, MT = 14, YMAX = 281;
+// Alat gambar bersama (ukuran font dalam pt, koordinat dalam mm)
+function pdfTools(pdf) {
   const PT = 25.4 / 72;                       // 1 pt dalam mm
   const font = (size, style) => { pdf.setFont('times', style || 'normal'); pdf.setFontSize(size); };
   const wrap = (s, w, size, style) => { font(size, style); return pdf.splitTextToSize(pdfSafe(s) || ' ', w); };
   const put = (s, x, yy, size, style, align) => { font(size, style); pdf.text(pdfSafe(s), x, yy, align ? { align } : undefined); };
   const width = (s, size, style) => { font(size, style); return pdf.getTextWidth(pdfSafe(s)); };
-  // baris teks ke-i di dalam kotak setinggi h (teks rata tengah vertikal, dengan jarak aman dari garis)
+  // baris teks ke-i di dalam kotak setinggi h (rata tengah vertikal, dengan jarak aman dari garis)
   const bl = (top, h, lh, fs, n, i) => top + (h - n * lh) / 2 + (lh - fs * PT) / 2 + fs * PT * 0.73 + i * lh;
+  return { PT, font, wrap, put, width, bl };
+}
 
-  pdf.setTextColor(0, 0, 0); pdf.setDrawColor(0, 0, 0); pdf.setFillColor(255, 255, 255);
-
-  // ---------------- KOP ----------------
-  let y = MT;
+// KOP RESMI (sama untuk raport dan semua rekap): logo kiri, judul SATU baris satu ukuran, garis tebal + tipis.
+// Mengembalikan posisi y setelah kop.
+function drawKopPdf(pdf, d, logo, ML, CW, MT) {
+  const { PT, put, wrap, width } = pdfTools(pdf);
   const LOGO = 20, TXT_W = CW - 2 * (LOGO + 4), CX = ML + CW / 2;
+  let y = MT;
   const drawLogoFallback = () => {
     pdf.setLineWidth(0.5); pdf.rect(ML, y, LOGO, LOGO, 'S');
     put('PKBM', ML + LOGO / 2, y + LOGO / 2 + 1.5, 12, 'bold', 'center');
@@ -3515,7 +3593,7 @@ function drawRaportPdf(pdf, d, logo) {
 
   const title = pdfSafe(d.kopTitle).toUpperCase();
   let ts = 15;
-  while (ts > 9 && width(title, ts, 'bold') > TXT_W) ts -= 0.25;       // satu baris, satu ukuran font
+  while (ts > 9 && width(title, ts, 'bold') > TXT_W) ts -= 0.25;
   const titleLines = width(title, ts, 'bold') > TXT_W ? wrap(title, TXT_W, ts, 'bold') : [title];
   let by = y + 5.0;
   titleLines.forEach((l, i) => { if (i) by += ts * PT * 1.15; put(l, CX, by, ts, 'bold', 'center'); });
@@ -3530,7 +3608,27 @@ function drawRaportPdf(pdf, d, logo) {
   const kopBottom = Math.max(y + LOGO, by + 1.5) + 2.0;
   pdf.setLineWidth(0.9); pdf.line(ML, kopBottom, ML + CW, kopBottom);
   pdf.setLineWidth(0.25); pdf.line(ML, kopBottom + 1.4, ML + CW, kopBottom + 1.4);
-  y = kopBottom + 1.4 + 5;
+  return kopBottom + 1.4 + 5;
+}
+
+// Jumlah & rata-rata nilai akhir seluruh mata pelajaran (format Indonesia: koma desimal)
+function raportTotals(mapel) {
+  const nums = (mapel || []).map(m => Number(m.akhir)).filter(n => isFinite(n));
+  const jumlah = nums.reduce((a, b) => a + b, 0);
+  const rata = nums.length ? jumlah / nums.length : 0;
+  const fmt = (n, dec) => n.toLocaleString('id-ID', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  return { jumlah: fmt(jumlah, Number.isInteger(jumlah) ? 0 : 2), rata: fmt(rata, 2) };
+}
+
+// Menggambar seluruh raport. pdf = instance jsPDF, d = data, logo = {data, ratio} atau null
+function drawRaportPdf(pdf, d, logo) {
+  const PW = 210, PH = 297, ML = 15, CW = 180, MT = 14, YMAX = 281;
+  const { PT, put, wrap, width, bl } = pdfTools(pdf);
+  const CX = ML + CW / 2;
+  pdf.setTextColor(0, 0, 0); pdf.setDrawColor(0, 0, 0); pdf.setFillColor(255, 255, 255);
+
+  // ---------------- KOP ----------------
+  let y = drawKopPdf(pdf, d, logo, ML, CW, MT);
 
   // ---------------- JUDUL ----------------
   const ttl = 'LAPORAN HASIL BELAJAR (RAPORT) PENDIDIKAN KESETARAAN';
@@ -3594,7 +3692,19 @@ function drawRaportPdf(pdf, d, logo) {
     capL.forEach((ln, k) => put(ln, colX[4] + PADX, bl(y, h, lhC, 9, capL.length, k), 9, 'normal'));
     y += h;
   });
-  y += 6;
+  y += 5;
+
+  // ---------------- TABEL JUMLAH NILAI & RATA-RATA ----------------
+  const tt = raportTotals(d.mapel), TH = 8, TLW = 60, TVW = 28;
+  if (y + TH > YMAX) { pdf.addPage('a4', 'portrait'); y = MT; }
+  [['Jumlah Nilai', tt.jumlah, ML], ['Nilai Rata-rata', tt.rata, ML + 92]].forEach(([lbl, val, x0]) => {
+    pdf.setLineWidth(0.25);
+    pdf.setFillColor(236, 236, 236); pdf.rect(x0, y, TLW, TH, 'FD');
+    pdf.setFillColor(255, 255, 255); pdf.rect(x0 + TLW, y, TVW, TH, 'FD');
+    put(lbl, x0 + PADX, bl(y, TH, TH, 9.5, 1, 0), 9.5, 'bold');
+    put(val, x0 + TLW + TVW / 2, bl(y, TH, TH, 10, 1, 0), 10, 'bold', 'center');
+  });
+  y += TH + 6;
 
   // ---------------- B & C ----------------
   const BW = 88, PADB = 3.5, LHB = 4.4, INW = BW - 2 * PADB;
@@ -3790,440 +3900,474 @@ function getOfficialExportSignature() {
   `;
 }
 
-// EKSPOR PRESENSI: WORD (.DOC)
-function exportPresensiToWord() {
-  const db = getDb();
-  const students = db.warga_belajar.filter(w => w.paket === selectedPresensiPaket);
-  const [year, month] = selectedPresensiMonth.split('-');
-  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
+// ==============================================================================
+// REKAP PRESENSI & NILAI: PDF, WORD (.docx), EXCEL (.xlsx)
+// Satu model data -> tiga format dengan tampilan sama: kop resmi (sama dengan raport),
+// kertas F4 (215 x 330 mm) LANDSCAPE, tabel bergaris, tanda tangan di bawah.
+// ==============================================================================
+const REKAP_MONTHS = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const REKAP_DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const F4_W = 330, F4_H = 215;          // mm, landscape
+const REKAP_ML = 10, REKAP_CW = 310;   // margin kiri & lebar isi (mm)
 
-  let rowsHtml = '';
-  students.forEach((st, idx) => {
-    const logs = db.presensi.filter(p => p.warga_belajar_id === st.id && p.tanggal.startsWith(selectedPresensiMonth));
-    const h = logs.filter(p => p.status_kehadiran === 'Hadir').length;
-    const i = logs.filter(p => p.status_kehadiran === 'Izin').length;
-    const s = logs.filter(p => p.status_kehadiran === 'Sakit').length;
-    const a = logs.filter(p => p.status_kehadiran === 'Alfa').length;
-    const total = logs.length;
-    const pct = total > 0 ? Math.round((h / total) * 100) : 100;
-    rowsHtml += `
-      <tr>
-        <td style="text-align: center;">${idx + 1}</td>
-        <td>${st.nisn}</td>
-        <td><strong>${st.nama_lengkap}</strong></td>
-        <td style="text-align: center;">${st.paket}</td>
-        <td style="text-align: center;">${h}</td>
-        <td style="text-align: center;">${i}</td>
-        <td style="text-align: center;">${s}</td>
-        <td style="text-align: center;">${a}</td>
-        <td style="text-align: center;">${total}</td>
-        <td style="text-align: center; font-weight: bold;">${pct}%</td>
-      </tr>
-    `;
-  });
-
-  const tableHtml = `
-    <table border="1" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 9.5pt;">
-      <thead>
-        <tr style="background-color: #f1f5f9;">
-          <th style="padding: 6px;">No</th>
-          <th style="padding: 6px;">NISN</th>
-          <th style="padding: 6px;">Nama Peserta Didik</th>
-          <th style="padding: 6px;">Program</th>
-          <th style="padding: 6px;">Hadir (H)</th>
-          <th style="padding: 6px;">Izin (I)</th>
-          <th style="padding: 6px;">Sakit (S)</th>
-          <th style="padding: 6px;">Alfa (A)</th>
-          <th style="padding: 6px;">Total</th>
-          <th style="padding: 6px;">Kehadiran (%)</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rowsHtml}
-      </tbody>
-    </table>
-  `;
-
-  const wordHtml = `
-    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-    <head>
-      <meta charset='utf-8'>
-      <title>Rekap Presensi ${selectedPresensiPaket} - ${monthLabel}</title>
-      <style>
-        body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; color: #000; }
-        table { border-collapse: collapse; width: 100%; margin-top: 15px; }
-        th, td { border: 1px solid #333; padding: 6px 8px; font-size: 9.5pt; }
-        th { background-color: #e2e8f0; font-weight: bold; text-align: center; }
-      </style>
-    </head>
-    <body>
-      ${getOfficialExportKop()}
-      <h3 style="text-align: center; margin: 10px 0 3px 0;">LAPORAN REKAPITULASI PRESENSI BELAJAR BULANAN</h3>
-      <p style="text-align: center; margin: 0 0 15px 0; font-size: 9.5pt;">Program: <strong>${selectedPresensiPaket}</strong> | Periode: <strong>${monthLabel}</strong></p>
-      ${tableHtml}
-      ${getOfficialExportSignature()}
-    </body>
-    </html>
-  `;
-
-  downloadFile(`Rekap_Presensi_${selectedPresensiPaket.replace(/\s+/g, '_')}_${selectedPresensiMonth}.doc`, 'application/msword;charset=utf-8', '\ufeff' + wordHtml);
-  showToast('Laporan Rekap Presensi format Word (.doc) berhasil diunduh!', 'success');
+function collectKopData() {
+  const profile = getInstitutionProfile();
+  return {
+    kopTitle: getKopTitleSingle(profile.nama_pkbm),
+    kopSub: 'Penyelenggara Pendidikan Nonformal Kesetaraan Paket A, Paket B, dan Paket C',
+    izin: profile.izin_operasional, npsn: profile.npsn, alamat: profile.alamat, logoUrl: profile.logo_url,
+    kota: profile.kota_terbit, tanggal: profile.tanggal_cetak,
+    pkbmClean: getCleanPkbmName(profile.nama_pkbm),
+    kepalaNama: (profile.nama_kepala || '').trim() || '-',
+    kepalaNip: (profile.nip_kepala && profile.nip_kepala.trim() && profile.nip_kepala.trim() !== '-') ? profile.nip_kepala.trim() : '-'
+  };
 }
 
-// EKSPOR PRESENSI: EXCEL (.XLS)
-function exportPresensiToExcel() {
+// ---------------------------- MODEL DATA ----------------------------
+function buildPresensiRekapModel() {
   const db = getDb();
-  const students = db.warga_belajar.filter(w => w.paket === selectedPresensiPaket);
-  const [year, month] = selectedPresensiMonth.split('-');
-  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
-
-  let rowsHtml = '';
-  students.forEach((st, idx) => {
-    const logs = db.presensi.filter(p => p.warga_belajar_id === st.id && p.tanggal.startsWith(selectedPresensiMonth));
-    const h = logs.filter(p => p.status_kehadiran === 'Hadir').length;
-    const i = logs.filter(p => p.status_kehadiran === 'Izin').length;
-    const s = logs.filter(p => p.status_kehadiran === 'Sakit').length;
-    const a = logs.filter(p => p.status_kehadiran === 'Alfa').length;
-    const total = logs.length;
-    const pct = total > 0 ? Math.round((h / total) * 100) : 100;
-    rowsHtml += `
-      <tr>
-        <td style="text-align: center;">${idx + 1}</td>
-        <td style="mso-number-format:'\\@';">${st.nisn}</td>
-        <td>${st.nama_lengkap}</td>
-        <td style="text-align: center;">${st.paket}</td>
-        <td style="text-align: center;">${h}</td>
-        <td style="text-align: center;">${i}</td>
-        <td style="text-align: center;">${s}</td>
-        <td style="text-align: center;">${a}</td>
-        <td style="text-align: center;">${total}</td>
-        <td style="text-align: center;">${pct}%</td>
-      </tr>
-    `;
+  const paket = selectedPresensiPaket;
+  const [y, m] = selectedPresensiMonth.split('-').map(Number);
+  const nDays = new Date(y, m, 0).getDate();
+  const days = [];
+  for (let d = 1; d <= nDays; d++) days.push({ d, dow: new Date(y, m - 1, d).getDay() });
+  const codeOf = { Hadir: 'H', Izin: 'I', Sakit: 'S', Alfa: 'A' };
+  const rows = db.warga_belajar.filter(w => w.paket === paket).map((st, i) => {
+    const marks = {};
+    db.presensi.filter(p => p.warga_belajar_id === st.id && String(p.tanggal).startsWith(selectedPresensiMonth)).forEach(p => {
+      const day = parseInt(String(p.tanggal).slice(8, 10), 10);
+      if (codeOf[p.status_kehadiran]) marks[day] = codeOf[p.status_kehadiran];
+    });
+    const tot = { H: 0, A: 0, I: 0, S: 0 };
+    Object.values(marks).forEach(c => { tot[c]++; });
+    return { no: i + 1, nisn: st.nisn, nama: st.nama_lengkap, marks, tot };
   });
-
-  const excelHtml = `
-    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-    <head>
-      <meta charset="utf-8">
-      <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Presensi_${selectedPresensiPaket}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-      <style>
-        th, td { border: 0.5pt solid #000; padding: 6px; font-family: Arial; font-size: 10pt; }
-        th { background-color: #dbeafe; font-weight: bold; }
-      </style>
-    </head>
-    <body>
-      <h3>REKAPITULASI PRESENSI BELAJAR BULANAN - ${selectedPresensiPaket} (${monthLabel})</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>NISN</th>
-            <th>Nama Peserta Didik</th>
-            <th>Program</th>
-            <th>Hadir (H)</th>
-            <th>Izin (I)</th>
-            <th>Sakit (S)</th>
-            <th>Alfa (A)</th>
-            <th>Total</th>
-            <th>Kehadiran (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
-      </table>
-    </body>
-    </html>
-  `;
-
-  downloadFile(`Rekap_Presensi_${selectedPresensiPaket.replace(/\s+/g, '_')}_${selectedPresensiMonth}.xls`, 'application/vnd.ms-excel;charset=utf-8', '\ufeff' + excelHtml);
-  showToast('Laporan Rekap Presensi format Excel (.xls) berhasil diunduh!', 'success');
+  return {
+    kind: 'presensi', days, rows,
+    title: 'REKAPITULASI PRESENSI PEMBELAJARAN BULANAN',
+    subtitle: `Program: ${paket}  |  Periode: ${REKAP_MONTHS[m]} ${y}`,
+    legend: 'Keterangan:  (titik) = Hadir     S = Sakit     I = Izin     A = Alfa',
+    fileBase: `Rekap_Presensi_${paket}_${selectedPresensiMonth}`
+  };
 }
 
-// EKSPOR PRESENSI: CETAK / PDF (A4)
-function exportPresensiToPdf() {
+function buildNilaiRekapModel() {
   const db = getDb();
-  const students = db.warga_belajar.filter(w => w.paket === selectedPresensiPaket);
-  const [year, month] = selectedPresensiMonth.split('-');
-  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
-
-  let rowsHtml = '';
-  students.forEach((st, idx) => {
-    const logs = db.presensi.filter(p => p.warga_belajar_id === st.id && p.tanggal.startsWith(selectedPresensiMonth));
-    const h = logs.filter(p => p.status_kehadiran === 'Hadir').length;
-    const i = logs.filter(p => p.status_kehadiran === 'Izin').length;
-    const s = logs.filter(p => p.status_kehadiran === 'Sakit').length;
-    const a = logs.filter(p => p.status_kehadiran === 'Alfa').length;
-    const total = logs.length;
-    const pct = total > 0 ? Math.round((h / total) * 100) : 100;
-    rowsHtml += `
-      <tr class="hover:bg-slate-50">
-        <td class="p-2 border border-slate-300 text-center font-medium">${idx + 1}</td>
-        <td class="p-2 border border-slate-300 font-mono">${st.nisn}</td>
-        <td class="p-2 border border-slate-300 font-bold">${st.nama_lengkap}</td>
-        <td class="p-2 border border-slate-300 text-center">${st.paket}</td>
-        <td class="p-2 border border-slate-300 text-center font-bold text-emerald-700">${h}</td>
-        <td class="p-2 border border-slate-300 text-center text-blue-700">${i}</td>
-        <td class="p-2 border border-slate-300 text-center text-amber-700">${s}</td>
-        <td class="p-2 border border-slate-300 text-center text-rose-700">${a}</td>
-        <td class="p-2 border border-slate-300 text-center font-semibold">${total}</td>
-        <td class="p-2 border border-slate-300 text-center font-black">${pct}%</td>
-      </tr>
-    `;
+  const paket = selectedNilaiPaket, mapel = selectedNilaiMapel;
+  const [y, m] = selectedNilaiMonth.split('-').map(Number);
+  const rows = db.warga_belajar.filter(w => w.paket === paket).map((st, i) => {
+    const find = j => db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === mapel && n.jenis === j);
+    const tgs = find('Tugas')?.nilai || 80;
+    const uts = find('UTS')?.nilai || tgs;
+    const uas = find('UAS')?.nilai || uts;
+    const akhir = Math.round((tgs * 0.3) + (uts * 0.3) + (uas * 0.4));
+    const pred = akhir >= 85 ? 'A' : akhir >= 75 ? 'B' : akhir >= 65 ? 'C' : 'D';
+    const cap = find('UAS')?.catatan || find('Tugas')?.catatan || 'Capaian materi sangat baik.';
+    return { no: i + 1, nisn: st.nisn, nama: st.nama_lengkap, tgs, uts, uas, akhir, pred, cap };
   });
-
-  const printHtml = `
-    <div class="p-8 max-w-[210mm] mx-auto text-slate-900 bg-white">
-      ${getOfficialExportKop()}
-      <div class="text-center my-4">
-        <h3 class="text-sm font-black uppercase tracking-wide">REKAPITULASI PRESENSI PEMBELAJARAN BULANAN</h3>
-        <p class="text-xs text-slate-600 mt-0.5">Program: <strong>${selectedPresensiPaket}</strong> | Periode: <strong>${monthLabel}</strong></p>
-      </div>
-      <table class="w-full text-xs border-collapse border border-slate-300 my-4">
-        <thead>
-          <tr class="bg-slate-100 font-bold">
-            <th class="p-2 border border-slate-300 text-center w-8">No</th>
-            <th class="p-2 border border-slate-300 text-left">NISN</th>
-            <th class="p-2 border border-slate-300 text-left">Nama Peserta Didik</th>
-            <th class="p-2 border border-slate-300 text-center">Program</th>
-            <th class="p-2 border border-slate-300 text-center">Hadir</th>
-            <th class="p-2 border border-slate-300 text-center">Izin</th>
-            <th class="p-2 border border-slate-300 text-center">Sakit</th>
-            <th class="p-2 border border-slate-300 text-center">Alfa</th>
-            <th class="p-2 border border-slate-300 text-center">Total</th>
-            <th class="p-2 border border-slate-300 text-center">Kehadiran</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
-      </table>
-      ${getOfficialExportSignature()}
-    </div>
-  `;
-
-  exportHtmlToPdf(printHtml, safeFileName(`Rekap_Presensi_${selectedPresensiPaket}_${year}-${month}`) + '.pdf');
+  return {
+    kind: 'nilai', rows,
+    title: 'REKAPITULASI PENILAIAN WARGA BELAJAR',
+    subtitle: `Program: ${paket}  |  Mata Pelajaran: ${mapel}  |  Periode: ${REKAP_MONTHS[m]} ${y}`,
+    legend: 'Keterangan:  Nilai Akhir = Tugas 30% + UTS 30% + UAS 40%.   Predikat: A (>= 85), B (>= 75), C (>= 65), D (< 65)',
+    fileBase: `Rekap_Nilai_${paket}_${mapel}_${selectedNilaiMonth}`
+  };
 }
 
-// EKSPOR NILAI: WORD (.DOC)
-function exportNilaiToWord() {
-  const db = getDb();
-  const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
-  const [year, month] = selectedNilaiMonth.split('-');
-  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
-
-  let rowsHtml = '';
-  students.forEach((st, idx) => {
-    const tgs = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.nilai || 80;
-    const uts = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UTS')?.nilai || tgs;
-    const uas = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.nilai || uts;
-    const finalScore = Math.round((tgs * 0.3) + (uts * 0.3) + (uas * 0.4));
-    const pred = finalScore >= 85 ? 'A' : finalScore >= 75 ? 'B' : finalScore >= 65 ? 'C' : 'D';
-    const lastNote = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.catatan || 
-                     db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.catatan || 'Capaian materi sangat baik.';
-
-    rowsHtml += `
-      <tr>
-        <td style="text-align: center;">${idx + 1}</td>
-        <td>${st.nisn}</td>
-        <td><strong>${st.nama_lengkap}</strong></td>
-        <td style="text-align: center;">${tgs}</td>
-        <td style="text-align: center;">${uts}</td>
-        <td style="text-align: center;">${uas}</td>
-        <td style="text-align: center; font-weight: bold;">${finalScore}</td>
-        <td style="text-align: center; font-weight: bold;">${pred}</td>
-        <td>${lastNote}</td>
-      </tr>
-    `;
-  });
-
-  const tableHtml = `
-    <table border="1" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 9.5pt;">
-      <thead>
-        <tr style="background-color: #f1f5f9;">
-          <th style="padding: 6px;">No</th>
-          <th style="padding: 6px;">NISN</th>
-          <th style="padding: 6px;">Nama Peserta Didik</th>
-          <th style="padding: 6px;">Tugas (30%)</th>
-          <th style="padding: 6px;">UTS (30%)</th>
-          <th style="padding: 6px;">UAS (40%)</th>
-          <th style="padding: 6px;">Nilai Akhir</th>
-          <th style="padding: 6px;">Predikat</th>
-          <th style="padding: 6px;">Deskripsi Capaian</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rowsHtml}
-      </tbody>
-    </table>
-  `;
-
-  const wordHtml = `
-    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-    <head>
-      <meta charset='utf-8'>
-      <title>Rekap Nilai ${selectedNilaiPaket} - ${selectedNilaiMapel}</title>
-      <style>
-        body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; color: #000; }
-        table { border-collapse: collapse; width: 100%; margin-top: 15px; }
-        th, td { border: 1px solid #333; padding: 6px 8px; font-size: 9.5pt; }
-        th { background-color: #e2e8f0; font-weight: bold; text-align: center; }
-      </style>
-    </head>
-    <body>
-      ${getOfficialExportKop()}
-      <h3 style="text-align: center; margin: 10px 0 3px 0;">LAPORAN REKAPITULASI PENILAIAN WARGA BELAJAR</h3>
-      <p style="text-align: center; margin: 0 0 15px 0; font-size: 9.5pt;">Program: <strong>${selectedNilaiPaket}</strong> | Mata Pelajaran: <strong>${selectedNilaiMapel}</strong> | Periode: <strong>${monthLabel}</strong></p>
-      ${tableHtml}
-      ${getOfficialExportSignature()}
-    </body>
-    </html>
-  `;
-
-  downloadFile(`Rekap_Nilai_${selectedNilaiPaket.replace(/\s+/g, '_')}_${selectedNilaiMapel.replace(/\s+/g, '_')}_${selectedNilaiMonth}.doc`, 'application/msword;charset=utf-8', '\ufeff' + wordHtml);
-  showToast('Laporan Rekap Nilai format Word (.doc) berhasil diunduh!', 'success');
+// Definisi kolom (lebar dalam mm, jumlah = lebar isi kertas)
+function rekapColumns(model, cw) {
+  if (model.kind === 'presensi') {
+    const fixed = [
+      { key: 'no', label: 'No', w: 8, align: 'center' },
+      { key: 'nisn', label: 'NISN', w: 26, align: 'left' },
+      { key: 'nama', label: 'Nama Peserta Didik', w: 56, align: 'left' }
+    ];
+    const tot = [['H', 'H'], ['A', 'A'], ['I', 'I'], ['S', 'S']].map(([k, l]) => ({ key: 't' + k, label: l, w: 10, align: 'center', group: 'Jumlah' }));
+    const dw = (cw - fixed.reduce((a, c) => a + c.w, 0) - tot.length * 10) / model.days.length;
+    const days = model.days.map(dd => ({ key: 'd' + dd.d, label: String(dd.d), w: dw, align: 'center', group: 'Tanggal Pertemuan', day: dd }));
+    return [...fixed, ...days, ...tot];
+  }
+  const fixed = [
+    { key: 'no', label: 'No', w: 10, align: 'center' },
+    { key: 'nisn', label: 'NISN', w: 30, align: 'left' },
+    { key: 'nama', label: 'Nama Peserta Didik', w: 62, align: 'left' },
+    { key: 'tgs', label: 'Tugas (30%)', w: 22, align: 'center' },
+    { key: 'uts', label: 'UTS (30%)', w: 22, align: 'center' },
+    { key: 'uas', label: 'UAS (40%)', w: 22, align: 'center' },
+    { key: 'akhir', label: 'Nilai Akhir', w: 24, align: 'center', bold: true },
+    { key: 'pred', label: 'Predikat', w: 20, align: 'center', bold: true }
+  ];
+  fixed.push({ key: 'cap', label: 'Deskripsi Capaian', w: cw - fixed.reduce((a, c) => a + c.w, 0), align: 'left' });
+  return fixed;
 }
 
-// EKSPOR NILAI: EXCEL (.XLS)
-function exportNilaiToExcel() {
-  const db = getDb();
-  const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
-  const [year, month] = selectedNilaiMonth.split('-');
-  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
-
-  let rowsHtml = '';
-  students.forEach((st, idx) => {
-    const tgs = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.nilai || 80;
-    const uts = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UTS')?.nilai || tgs;
-    const uas = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.nilai || uts;
-    const finalScore = Math.round((tgs * 0.3) + (uts * 0.3) + (uas * 0.4));
-    const pred = finalScore >= 85 ? 'A' : finalScore >= 75 ? 'B' : finalScore >= 65 ? 'C' : 'D';
-    const lastNote = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.catatan || 
-                     db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.catatan || 'Capaian materi sangat baik.';
-
-    rowsHtml += `
-      <tr>
-        <td style="text-align: center;">${idx + 1}</td>
-        <td style="mso-number-format:'\\@';">${st.nisn}</td>
-        <td>${st.nama_lengkap}</td>
-        <td style="text-align: center;">${tgs}</td>
-        <td style="text-align: center;">${uts}</td>
-        <td style="text-align: center;">${uas}</td>
-        <td style="text-align: center; font-weight: bold;">${finalScore}</td>
-        <td style="text-align: center; font-weight: bold;">${pred}</td>
-        <td>${lastNote}</td>
-      </tr>
-    `;
-  });
-
-  const excelHtml = `
-    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-    <head>
-      <meta charset="utf-8">
-      <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Nilai_${selectedNilaiPaket}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-      <style>
-        th, td { border: 0.5pt solid #000; padding: 6px; font-family: Arial; font-size: 10pt; }
-        th { background-color: #dbeafe; font-weight: bold; }
-      </style>
-    </head>
-    <body>
-      <h3>REKAPITULASI PENILAIAN WARGA BELAJAR - ${selectedNilaiPaket} • ${selectedNilaiMapel} (${monthLabel})</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>NISN</th>
-            <th>Nama Peserta Didik</th>
-            <th>Tugas (30%)</th>
-            <th>UTS (30%)</th>
-            <th>UAS (40%)</th>
-            <th>Nilai Akhir</th>
-            <th>Predikat</th>
-            <th>Deskripsi Capaian</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
-      </table>
-    </body>
-    </html>
-  `;
-
-  downloadFile(`Rekap_Nilai_${selectedNilaiPaket.replace(/\s+/g, '_')}_${selectedNilaiMapel.replace(/\s+/g, '_')}_${selectedNilaiMonth}.xls`, 'application/vnd.ms-excel;charset=utf-8', '\ufeff' + excelHtml);
-  showToast('Laporan Rekap Nilai format Excel (.xls) berhasil diunduh!', 'success');
+// Isi sel sebagai teks (dipakai Word & Excel). Hadir = titik tengah.
+function rekapCellValue(model, row, col) {
+  if (col.key.charAt(0) === 'd' && col.day) { const c = row.marks[col.day.d]; return c === 'H' ? '\u25CF' : (c || ''); }
+  if (col.key.charAt(0) === 't' && col.key.length === 2) return String(row.tot[col.key.charAt(1)]);
+  return row[col.key] == null ? '' : String(row[col.key]);
 }
 
-// EKSPOR NILAI: CETAK / PDF (A4)
-function exportNilaiToPdf() {
-  const db = getDb();
-  const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
-  const [year, month] = selectedNilaiMonth.split('-');
-  const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  const monthLabel = `${monthNames[parseInt(month)] || month} ${year}`;
+// ---------------------------- PDF (jsPDF, F4 landscape) ----------------------------
+function drawRekapPdf(pdf, model, d, logo) {
+  const PW = F4_W, PH = F4_H, ML = REKAP_ML, CW = REKAP_CW, MT = 10, YMAX = PH - 12;
+  const { PT, put, wrap, width, bl } = pdfTools(pdf);
+  const CX = ML + CW / 2;
+  pdf.setTextColor(0, 0, 0); pdf.setDrawColor(0, 0, 0); pdf.setFillColor(255, 255, 255);
 
-  let rowsHtml = '';
-  students.forEach((st, idx) => {
-    const tgs = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.nilai || 80;
-    const uts = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UTS')?.nilai || tgs;
-    const uas = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.nilai || uts;
-    const finalScore = Math.round((tgs * 0.3) + (uts * 0.3) + (uas * 0.4));
-    const pred = finalScore >= 85 ? 'A' : finalScore >= 75 ? 'B' : finalScore >= 65 ? 'C' : 'D';
-    const lastNote = db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'UAS')?.catatan || 
-                     db.penilaian.find(n => n.warga_belajar_id === st.id && n.mapel === selectedNilaiMapel && n.jenis === 'Tugas')?.catatan || 'Capaian materi sangat baik.';
+  let y = drawKopPdf(pdf, d, logo, ML, CW, MT);
+  put(model.title, CX, y + 3.5, 11.5, 'bold', 'center');
+  put(model.subtitle, CX, y + 9, 9.5, 'normal', 'center');
+  y += 14;
 
-    rowsHtml += `
-      <tr class="hover:bg-slate-50">
-        <td class="p-2 border border-slate-300 text-center font-medium">${idx + 1}</td>
-        <td class="p-2 border border-slate-300 font-mono">${st.nisn}</td>
-        <td class="p-2 border border-slate-300 font-bold">${st.nama_lengkap}</td>
-        <td class="p-2 border border-slate-300 text-center font-semibold">${tgs}</td>
-        <td class="p-2 border border-slate-300 text-center font-semibold">${uts}</td>
-        <td class="p-2 border border-slate-300 text-center font-semibold">${uas}</td>
-        <td class="p-2 border border-slate-300 text-center font-black text-blue-700">${finalScore}</td>
-        <td class="p-2 border border-slate-300 text-center font-bold">${pred}</td>
-        <td class="p-2 border border-slate-300 text-slate-700 text-[11px]">${lastNote}</td>
-      </tr>
-    `;
+  const cols = rekapColumns(model, CW);
+  const xs = []; cols.reduce((a, c) => { xs.push(a); return a + c.w; }, ML);
+  const grouped = cols.some(c => c.group);
+  const H1 = grouped ? 6 : 8, H2 = grouped ? 6 : 0;
+  const headerH = H1 + H2;
+
+  const drawHeader = yy => {
+    pdf.setLineWidth(0.2); pdf.setFillColor(222, 222, 222);
+    let i = 0;
+    while (i < cols.length) {
+      const c = cols[i];
+      if (!c.group) {
+        pdf.rect(xs[i], yy, c.w, headerH, 'FD');
+        put(c.label, xs[i] + c.w / 2, bl(yy, headerH, headerH, 8.5, 1, 0), 8.5, 'bold', 'center');
+        i++;
+      } else {
+        let j = i, gw = 0;
+        while (j < cols.length && cols[j].group === c.group) { gw += cols[j].w; j++; }
+        pdf.rect(xs[i], yy, gw, H1, 'FD');
+        put(c.group, xs[i] + gw / 2, bl(yy, H1, H1, 8.5, 1, 0), 8.5, 'bold', 'center');
+        for (let k = i; k < j; k++) {
+          pdf.rect(xs[k], yy + H1, cols[k].w, H2, 'FD');
+          put(cols[k].label, xs[k] + cols[k].w / 2, bl(yy + H1, H2, H2, 8, 1, 0), 8, 'bold', 'center');
+        }
+        i = j;
+      }
+    }
+    return yy + headerH;
+  };
+  y = drawHeader(y);
+
+  const PADX = 1.8, FS = model.kind === 'presensi' ? 8.5 : 9, LHR = FS * PT * 1.3;
+  (model.rows.length ? model.rows : [{ no: '-', nisn: '-', nama: 'Belum ada data', marks: {}, tot: { H: 0, A: 0, I: 0, S: 0 }, tgs: '-', uts: '-', uas: '-', akhir: '-', pred: '-', cap: '-' }]).forEach(row => {
+    // tinggi baris mengikuti teks terpanjang (nama / deskripsi) agar tidak terpotong
+    const wrapped = cols.map(c => (c.align === 'left') ? wrap(rekapCellValue(model, row, c), c.w - 2 * PADX, FS, c.bold ? 'bold' : 'normal') : null);
+    const maxLines = Math.max(1, ...wrapped.map(w => w ? w.length : 1));
+    const h = Math.max(6.4, maxLines * LHR + 3);
+    if (y + h > YMAX) { pdf.addPage([F4_H, F4_W], 'landscape'); y = drawHeader(MT); }
+    pdf.setLineWidth(0.2);
+    cols.forEach((c, i) => {
+      const sunday = c.day && c.day.dow === 0;
+      if (sunday) pdf.setFillColor(228, 228, 228); else pdf.setFillColor(255, 255, 255);
+      pdf.rect(xs[i], y, c.w, h, sunday ? 'FD' : 'FD');
+      const v = rekapCellValue(model, row, c);
+      if (c.day) {
+        const code = row.marks[c.day.d];
+        if (code === 'H') { pdf.setFillColor(0, 0, 0); pdf.circle(xs[i] + c.w / 2, y + h / 2, 0.8, 'F'); }
+        else if (code) put(code, xs[i] + c.w / 2, bl(y, h, LHR, FS, 1, 0), FS, 'bold', 'center');
+      } else if (wrapped[i]) {
+        wrapped[i].forEach((ln, k) => put(ln, xs[i] + PADX, bl(y, h, LHR, FS, wrapped[i].length, k), FS, c.bold ? 'bold' : 'normal'));
+      } else {
+        put(v, xs[i] + c.w / 2, bl(y, h, LHR, FS, 1, 0), FS, c.bold ? 'bold' : 'normal', 'center');
+      }
+    });
+    y += h;
+  });
+  pdf.setFillColor(255, 255, 255);
+
+  // ---- keterangan + tanda tangan (satu blok, tidak terpisah halaman) ----
+  const SIGH = 44;
+  if (y + 8 + SIGH > YMAX) { pdf.addPage([F4_H, F4_W], 'landscape'); y = MT; }
+  y += 5;
+  if (model.kind === 'presensi') {
+    put('Keterangan:', ML, y, 8.5, 'bold');
+    let lx = ML + width('Keterangan:', 8.5, 'bold') + 4;
+    pdf.setFillColor(0, 0, 0); pdf.circle(lx + 0.8, y - 1.1, 0.8, 'F'); lx += 3;
+    [['= Hadir', ''], ['S = Sakit', ''], ['I = Izin', ''], ['A = Alfa', '']].forEach(([t], i) => {
+      put(t, lx, y, 8.5, 'normal'); lx += width(t, 8.5, 'normal') + 7;
+    });
+  } else {
+    put(model.legend, ML, y, 8.5, 'normal');
+  }
+  y += 6;
+  const LHB = 4.4, SPACE = 22, cxs = [ML + CW * 0.25, ML + CW * 0.75];
+  const blocks = [
+    { head: ['Mengetahui,', 'Tutor Pembimbing / Wali Kelas'], name: '( ............................ )', nip: null },
+    { head: [d.kota + ', ' + d.tanggal, 'Kepala ' + d.pkbmClean], name: d.kepalaNama, nip: d.kepalaNip }
+  ];
+  blocks.forEach((b, i) => {
+    b.head.forEach((t, k) => put(t, cxs[i], y + 3.6 + k * LHB, 9.5, k === 1 ? 'bold' : 'normal', 'center'));
+    const nb = y + 2 * LHB + SPACE + 3.6;
+    put(b.name, cxs[i], nb, 10, 'bold', 'center');
+    if (b.nip) {
+      const lw = Math.max(46, width(b.name, 10, 'bold') + 8);
+      pdf.setLineWidth(0.35); pdf.line(cxs[i] - lw / 2, nb + 1.9, cxs[i] + lw / 2, nb + 1.9);
+      put('NIP: ' + b.nip, cxs[i], nb + 1.9 + 4.3, 9, 'normal', 'center');
+    }
   });
 
-  const printHtml = `
-    <div class="p-8 max-w-[210mm] mx-auto text-slate-900 bg-white">
-      ${getOfficialExportKop()}
-      <div class="text-center my-4">
-        <h3 class="text-sm font-black uppercase tracking-wide">REKAPITULASI PENILAIAN WARGA BELAJAR</h3>
-        <p class="text-xs text-slate-600 mt-0.5">Program: <strong>${selectedNilaiPaket}</strong> | Mata Pelajaran: <strong>${selectedNilaiMapel}</strong> | Periode: <strong>${monthLabel}</strong></p>
-      </div>
-      <table class="w-full text-xs border-collapse border border-slate-300 my-4">
-        <thead>
-          <tr class="bg-slate-100 font-bold">
-            <th class="p-2 border border-slate-300 text-center w-8">No</th>
-            <th class="p-2 border border-slate-300 text-left">NISN</th>
-            <th class="p-2 border border-slate-300 text-left">Nama Peserta Didik</th>
-            <th class="p-2 border border-slate-300 text-center">Tugas (30%)</th>
-            <th class="p-2 border border-slate-300 text-center">UTS (30%)</th>
-            <th class="p-2 border border-slate-300 text-center">UAS (40%)</th>
-            <th class="p-2 border border-slate-300 text-center">Nilai Akhir</th>
-            <th class="p-2 border border-slate-300 text-center">Predikat</th>
-            <th class="p-2 border border-slate-300 text-left">Deskripsi Capaian</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
-      </table>
-      ${getOfficialExportSignature()}
-    </div>
-  `;
-
-  exportHtmlToPdf(printHtml, safeFileName(`Rekap_Nilai_${selectedNilaiPaket}_${selectedNilaiMapel}_${year}-${month}`) + '.pdf');
+  const total = pdf.getNumberOfPages();
+  if (total > 1) for (let p = 1; p <= total; p++) { pdf.setPage(p); put('Halaman ' + p + ' dari ' + total, CX, PH - 5, 8, 'normal', 'center'); }
 }
+
+async function buildRekapPdfBlob(model) {
+  await loadScriptOnce(JSPDF_URL, () => !!(window.jspdf && window.jspdf.jsPDF));
+  const d = collectKopData();
+  const logo = await loadLogoForPdf(d.logoUrl);
+  const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: [F4_H, F4_W], orientation: 'landscape', compress: true });
+  pdf.setProperties({ title: pdfSafe(model.title), subject: pdfSafe(model.subtitle), author: pdfSafe(d.kopTitle) });
+  drawRekapPdf(pdf, model, d, logo);
+  const blob = pdf.output('blob');
+  if (!blob || blob.size < 1000) throw new Error('File PDF kosong');
+  return blob;
+}
+
+// ---------------------------- ZIP sederhana (tanpa pustaka) ----------------------------
+const _crcT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = _crcT[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files, mime) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  const u16 = n => [n & 255, (n >> 8) & 255], u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  let off = 0;
+  files.forEach(f => {
+    const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
+    const crc = crc32(data), size = data.length;
+    const head = new Uint8Array([0x50, 0x4b, 3, 4, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(size), ...u32(size), ...u16(name.length), ...u16(0)]);
+    parts.push(head, name, data);
+    central.push(new Uint8Array([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(size), ...u32(size), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]), name);
+    off += head.length + name.length + size;
+  });
+  const cSize = central.reduce((a, b) => a + b.length, 0);
+  const end = new Uint8Array([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cSize), ...u32(off), ...u16(0)]);
+  return new Blob([...parts, ...central, end], { type: mime });
+}
+function dataUrlToBytes(url) {
+  const b = atob(String(url).split(',')[1] || ''); const u = new Uint8Array(b.length);
+  for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u;
+}
+const xe = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+const mm2tw = mm => Math.round(mm * 56.6929);
+
+// ---------------------------- WORD (.docx) ----------------------------
+function buildRekapDocx(model, d, logo) {
+  const cols = rekapColumns(model, REKAP_CW);
+  const tw = cols.map(c => Math.max(1, mm2tw(c.w)));
+  const total = tw.reduce((a, b) => a + b, 0);
+  const grouped = cols.some(c => c.group);
+  const fs = model.kind === 'presensi' ? 16 : 18;           // setengah-poin: 8pt / 9pt
+  const run = (t, o = {}) => `<w:r><w:rPr>${o.b ? '<w:b/>' : ''}${o.u ? '<w:u w:val="single"/>' : ''}<w:sz w:val="${o.sz || 20}"/><w:szCs w:val="${o.sz || 20}"/></w:rPr><w:t xml:space="preserve">${xe(t)}</w:t></w:r>`;
+  const para = (t, o = {}) => `<w:p><w:pPr>${o.keep ? '<w:keepNext/>' : ''}<w:spacing w:before="${o.before || 0}" w:after="${o.after || 0}"/><w:jc w:val="${o.jc || 'left'}"/></w:pPr>${t === '' ? '' : run(t, o)}</w:p>`;
+  const emu = mm => Math.round(mm * 36000);
+
+  // KOP: tabel tanpa garis (logo | teks tengah | penyeimbang)
+  const LOGO = 18, kopW = mm2tw(REKAP_CW);
+  const sideW = mm2tw(LOGO + 4), midW = kopW - 2 * sideW;
+  const txtMm = (kopW - 2 * sideW) / 56.6929;
+  const em = parseFloat(measureKopEm(d.kopTitle));
+  let tsz = 15; while (tsz > 9 && em * tsz * 0.3528 > txtMm * 0.97) tsz -= 0.5;
+  let drawing = '';
+  if (logo && logo.bytes) {
+    const w = logo.ratio >= 1 ? LOGO : LOGO * logo.ratio, h = logo.ratio >= 1 ? LOGO / logo.ratio : LOGO;
+    drawing = `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${emu(w)}" cy="${emu(h)}"/><wp:docPr id="1" name="Logo"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="logo.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdLogo"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(w)}" cy="${emu(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+  }
+  const noB = '<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>';
+  const tcP = (w, inner, va) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/><w:vAlign w:val="${va || 'center'}"/></w:tcPr>${inner}</w:tc>`;
+  const kop = `<w:tbl><w:tblPr><w:tblW w:w="${kopW}" w:type="dxa"/>${noB}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="${sideW}"/><w:gridCol w:w="${midW}"/><w:gridCol w:w="${sideW}"/></w:tblGrid><w:tr>`
+    + tcP(sideW, `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>${drawing}</w:p>`)
+    + tcP(midW, para(d.kopTitle, { b: 1, sz: Math.round(tsz * 2), jc: 'center' }) + para(d.kopSub, { b: 1, sz: 19, jc: 'center', before: 40 }) + para('Izin Operasional: ' + d.izin + '  |  NPSN: ' + d.npsn, { sz: 18, jc: 'center' }) + para(d.alamat, { sz: 17, jc: 'center' }))
+    + tcP(sideW, para('', {}))
+    + '</w:tr></w:tbl>';
+  const rule = `<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="24" w:space="1" w:color="000000"/></w:pBdr><w:spacing w:before="0" w:after="0" w:line="40" w:lineRule="exact"/></w:pPr></w:p><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="000000"/></w:pBdr><w:spacing w:before="0" w:after="120" w:line="40" w:lineRule="exact"/></w:pPr></w:p>`;
+
+  // TABEL DATA
+  const bd = '<w:tblBorders><w:top w:val="single" w:sz="4" w:color="000000"/><w:left w:val="single" w:sz="4" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:color="000000"/><w:right w:val="single" w:sz="4" w:color="000000"/><w:insideH w:val="single" w:sz="4" w:color="000000"/><w:insideV w:val="single" w:sz="4" w:color="000000"/></w:tblBorders>';
+  const cell = (w, txt, o = {}) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${o.span ? `<w:gridSpan w:val="${o.span}"/>` : ''}${o.vm ? `<w:vMerge${o.vm === 'restart' ? ' w:val="restart"' : ''}/>` : ''}${o.fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>` : ''}<w:vAlign w:val="center"/></w:tcPr>${para(txt, { jc: o.jc || 'center', sz: o.sz || fs, b: o.b, before: 25, after: 25 })}</w:tc>`;
+  let hdr = '';
+  if (grouped) {
+    let r1 = '', r2 = '', i = 0;
+    while (i < cols.length) {
+      const c = cols[i];
+      if (!c.group) { r1 += cell(tw[i], c.label, { b: 1, fill: 'DEDEDE', vm: 'restart' }); r2 += cell(tw[i], '', { fill: 'DEDEDE', vm: 'cont' }); i++; }
+      else {
+        let j = i, gw = 0; while (j < cols.length && cols[j].group === c.group) { gw += tw[j]; j++; }
+        r1 += cell(gw, c.group, { b: 1, fill: 'DEDEDE', span: j - i });
+        for (let k = i; k < j; k++) r2 += cell(tw[k], cols[k].label, { b: 1, fill: 'DEDEDE', sz: 15 });
+        i = j;
+      }
+    }
+    hdr = `<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="300" w:hRule="atLeast"/><w:tblHeader/></w:trPr>${r1}</w:tr><w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="300" w:hRule="atLeast"/><w:tblHeader/></w:trPr>${r2}</w:tr>`;
+  } else {
+    hdr = `<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="400" w:hRule="atLeast"/><w:tblHeader/></w:trPr>${cols.map((c, i) => cell(tw[i], c.label, { b: 1, fill: 'DEDEDE' })).join('')}</w:tr>`;
+  }
+  const body = model.rows.map(row => `<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="${model.kind === 'presensi' ? 340 : 400}" w:hRule="atLeast"/></w:trPr>${cols.map((c, i) => cell(tw[i], rekapCellValue(model, row, c), { jc: c.align === 'left' ? 'left' : 'center', b: c.bold || (c.day && row.marks[c.day.d] && row.marks[c.day.d] !== 'H'), fill: c.day && c.day.dow === 0 ? 'E4E4E4' : null })).join('')}</w:tr>`).join('');
+  const table = `<w:tbl><w:tblPr><w:tblW w:w="${total}" w:type="dxa"/>${bd}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="50" w:type="dxa"/><w:right w:w="50" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${tw.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>${hdr}${body}</w:tbl>`;
+
+  // TANDA TANGAN (satu baris tabel, tidak terpisah halaman)
+  const half = Math.round(kopW / 2);
+  const sigCell = (lines) => tcP(half, lines, 'top');
+  const sig = `<w:tbl><w:tblPr><w:tblW w:w="${kopW}" w:type="dxa"/>${noB}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="${half}"/><w:gridCol w:w="${kopW - half}"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>`
+    + sigCell(para('Mengetahui,', { jc: 'center', keep: 1 }) + para('Tutor Pembimbing / Wali Kelas', { jc: 'center', b: 1, keep: 1 }) + para('', { after: 900, keep: 1 }) + para('( ............................ )', { jc: 'center', b: 1, keep: 1 }))
+    + sigCell(para(d.kota + ', ' + d.tanggal, { jc: 'center', keep: 1 }) + para('Kepala ' + d.pkbmClean, { jc: 'center', b: 1, keep: 1 }) + para('', { after: 900, keep: 1 }) + para(d.kepalaNama, { jc: 'center', b: 1, u: 1, keep: 1 }) + para('NIP: ' + d.kepalaNip, { jc: 'center', sz: 18 }))
+    + '</w:tr></w:tbl>';
+
+  const legend = model.kind === 'presensi' ? 'Keterangan:  \u25CF = Hadir     S = Sakit     I = Izin     A = Alfa' : model.legend;
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><w:body>${kop}${rule}${para(model.title, { jc: 'center', b: 1, sz: 23, before: 60 })}${para(model.subtitle, { jc: 'center', sz: 19, after: 140 })}${table}${para(legend, { sz: 17, before: 100, after: 100 })}${sig}<w:sectPr><w:pgSz w:w="${mm2tw(F4_W)}" w:h="${mm2tw(F4_H)}" w:orient="landscape"/><w:pgMar w:top="567" w:right="${mm2tw(REKAP_ML)}" w:bottom="680" w:left="${mm2tw(REKAP_ML)}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const files = [
+    { name: '[Content_Types].xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>` },
+    { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>` },
+    { name: 'word/_rels/document.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${logo && logo.bytes ? '<Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/>' : ''}</Relationships>` },
+    { name: 'word/styles.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="id-ID"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>` },
+    { name: 'word/document.xml', data: doc }
+  ];
+  if (logo && logo.bytes) files.push({ name: 'word/media/logo.png', data: logo.bytes });
+  return zipStore(files, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+}
+
+// ---------------------------- EXCEL (.xlsx) ----------------------------
+function xlCol(n) { let s = ''; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+
+function buildRekapXlsx(model, d, logo) {
+  const cols = rekapColumns(model, REKAP_CW);
+  const nC = cols.length, last = xlCol(nC - 1);
+  const grouped = cols.some(c => c.group);
+  // gaya sel: indeks harus sama dengan urutan cellXfs di styles.xml
+  const S = { def: 0, kopT: 1, kopS: 2, kopX: 3, title: 4, sub: 5, hdr: 6, ctr: 7, left: 8, ctrB: 9, sun: 10, sunB: 11, leg: 12, sig: 13, sigB: 14, sigU: 15, sigS: 16, rule: 17 };
+  const rows = [], merges = [], rowH = {};
+  const cells = {};                                  // r -> [xml]
+  const put = (r, c, v, s, num) => { (cells[r] = cells[r] || []).push({ c, xml: v === '' || v == null ? `<c r="${xlCol(c)}${r}" s="${s}"/>` : num ? `<c r="${xlCol(c)}${r}" s="${s}"><v>${v}</v></c>` : `<c r="${xlCol(c)}${r}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xe(v)}</t></is></c>` }); };
+  const mergeRow = (r, text, s, h) => { put(r, 0, text, s); for (let c = 1; c < nC; c++) put(r, c, '', s); merges.push(`A${r}:${last}${r}`); if (h) rowH[r] = h; };
+
+  let r = 1;
+  mergeRow(r++, d.kopTitle, S.kopT, 24);
+  mergeRow(r++, d.kopSub, S.kopS, 16);
+  mergeRow(r++, 'Izin Operasional: ' + d.izin + '  |  NPSN: ' + d.npsn, S.kopX, 14);
+  mergeRow(r++, d.alamat, S.kopX, 14);
+  const ruleRow = r; mergeRow(r++, '', S.rule, 5);        // garis kop (border bawah lewat gaya khusus di bawah)
+  mergeRow(r++, model.title, S.title, 20);
+  mergeRow(r++, model.subtitle, S.sub, 16);
+  r++;                                                   // baris kosong
+  const h1 = r;
+  if (grouped) {
+    let i = 0;
+    while (i < nC) {
+      const c = cols[i];
+      if (!c.group) { put(h1, i, c.label, S.hdr); put(h1 + 1, i, '', S.hdr); merges.push(`${xlCol(i)}${h1}:${xlCol(i)}${h1 + 1}`); i++; }
+      else {
+        let j = i; while (j < nC && cols[j].group === c.group) j++;
+        put(h1, i, c.group, S.hdr); for (let k = i + 1; k < j; k++) put(h1, k, '', S.hdr);
+        merges.push(`${xlCol(i)}${h1}:${xlCol(j - 1)}${h1}`);
+        for (let k = i; k < j; k++) put(h1 + 1, k, cols[k].label, S.hdr);
+        i = j;
+      }
+    }
+    rowH[h1] = 17; rowH[h1 + 1] = 17; r = h1 + 2;
+  } else { cols.forEach((c, i) => put(h1, i, c.label, S.hdr)); rowH[h1] = 22; r = h1 + 1; }
+  const dataStart = r;
+  model.rows.forEach(row => {
+    cols.forEach((c, i) => {
+      const v = rekapCellValue(model, row, c);
+      const sunday = c.day && c.day.dow === 0;
+      const isNum = ['no', 'tgs', 'uts', 'uas', 'akhir'].includes(c.key) || (c.key.length === 2 && c.key.charAt(0) === 't');
+      const st = c.align === 'left' ? S.left : (sunday ? ((c.day && row.marks[c.day.d] && row.marks[c.day.d] !== 'H') ? S.sunB : S.sun) : (c.bold || (c.day && row.marks[c.day.d] && row.marks[c.day.d] !== 'H') ? S.ctrB : S.ctr));
+      put(r, i, v, st, isNum && v !== '');
+    });
+    rowH[r] = model.kind === 'presensi' ? (String(row.nama).length > 28 ? 29 : 17) : (row.cap && row.cap.length > 70 ? 30 : 18);
+    r++;
+  });
+  r++;
+  mergeRow(r++, model.kind === 'presensi' ? 'Keterangan:  \u25CF = Hadir     S = Sakit     I = Izin     A = Alfa' : model.legend, S.leg, 15);
+  r++;
+  // tanda tangan: kiri dan kanan (digabung)
+  const mid = Math.floor(nC / 2);
+  const sigRow = (rr, lt, rt, st) => {
+    put(rr, 0, lt, st); for (let c = 1; c < mid; c++) put(rr, c, '', st); merges.push(`A${rr}:${xlCol(mid - 1)}${rr}`);
+    put(rr, mid, rt, st); for (let c = mid + 1; c < nC; c++) put(rr, c, '', st); merges.push(`${xlCol(mid)}${rr}:${last}${rr}`);
+  };
+  sigRow(r++, 'Mengetahui,', d.kota + ', ' + d.tanggal, S.sig);
+  sigRow(r++, 'Tutor Pembimbing / Wali Kelas', 'Kepala ' + d.pkbmClean, S.sigB);
+  rowH[r] = 48; sigRow(r++, '', '', S.sig);
+  sigRow(r++, '( ............................ )', d.kepalaNama, S.sigU);
+  sigRow(r++, '', 'NIP: ' + d.kepalaNip, S.sigS);
+  const lastRow = r - 1;
+
+  // garis kop: pakai border bawah pada baris ruleRow
+  const sheetRows = [];
+  for (let rr = 1; rr <= lastRow; rr++) {
+    const cs = (cells[rr] || []).sort((a, b) => a.c - b.c).map(x => x.xml).join('');
+    const ht = rowH[rr] ? ` ht="${rowH[rr]}" customHeight="1"` : '';
+    sheetRows.push(`<row r="${rr}"${ht}>${cs}</row>`);
+  }
+  // XML tidak boleh kosong utk baris tanpa sel, itu valid.
+  const colsXml = '<cols>' + cols.map((c, i) => `<col min="${i + 1}" max="${i + 1}" width="${(c.w / 1.9).toFixed(2)}" customWidth="1"/>`).join('') + '</cols>';
+  const hasLogo = !!(logo && logo.bytes);
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/>${colsXml}<sheetData>${sheetRows.join('')}</sheetData><mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells><printOptions horizontalCentered="1"/><pageMargins left="0.39" right="0.39" top="0.39" bottom="0.47" header="0.2" footer="0.2"/><pageSetup paperSize="14" orientation="landscape" fitToWidth="1" fitToHeight="0"/>${hasLogo ? '<drawing r:id="rId1"/>' : ''}</worksheet>`;
+
+  const font = (sz, b, u) => `<font>${b ? '<b/>' : ''}${u ? '<u/>' : ''}<sz val="${sz}"/><name val="Times New Roman"/></font>`;
+  const fonts = [font(10), font(15, 1), font(10, 1), font(9), font(12, 1), font(10, 1, 1), font(8)];
+  const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>', '<fill><patternFill patternType="solid"><fgColor rgb="FFDEDEDE"/><bgColor indexed="64"/></patternFill></fill>', '<fill><patternFill patternType="solid"><fgColor rgb="FFE4E4E4"/><bgColor indexed="64"/></patternFill></fill>'];
+  const thin = '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/></border>';
+  const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>', thin, '<border><left/><right/><top/><bottom style="thick"><color rgb="FF000000"/></bottom><diagonal/></border>'];
+  const xf = (f, fi, b, h, v, wrap) => `<xf numFmtId="0" fontId="${f}" fillId="${fi}" borderId="${b}" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="${h}" vertical="${v || 'center'}"${wrap ? ' wrapText="1"' : ''}/></xf>`;
+  const xfs = [xf(0, 0, 0, 'left'), xf(1, 0, 0, 'center'), xf(2, 0, 0, 'center'), xf(3, 0, 0, 'center'), xf(4, 0, 0, 'center'), xf(0, 0, 0, 'center'), xf(2, 2, 1, 'center', 'center', 1), xf(0, 0, 1, 'center'), xf(0, 0, 1, 'left', 'center', 1), xf(2, 0, 1, 'center'), xf(0, 3, 1, 'center'), xf(2, 3, 1, 'center'), xf(3, 0, 0, 'left'), xf(0, 0, 0, 'center'), xf(2, 0, 0, 'center'), xf(5, 0, 0, 'center'), xf(3, 0, 0, 'center'), xf(0, 0, 2, 'left')];
+  xfs[S.def] = xf(0, 0, 0, 'left');
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${fonts.length}">${fonts.join('')}</fonts><fills count="${fills.length}">${fills.join('')}</fills><borders count="${borders.length}">${borders.join('')}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+  const sn = model.kind === 'presensi' ? 'Presensi' : 'Nilai';
+  const files = [
+    { name: '[Content_Types].xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${hasLogo ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : ''}</Types>` },
+    { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { name: 'xl/workbook.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${sn}" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm.Print_Titles" localSheetId="0">${sn}!$${h1}:$${grouped ? h1 + 1 : h1}</definedName></definedNames></workbook>` },
+    { name: 'xl/_rels/workbook.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+    { name: 'xl/styles.xml', data: styles },
+    { name: 'xl/worksheets/sheet1.xml', data: sheet }
+  ];
+  if (hasLogo) {
+    const w = logo.ratio >= 1 ? 17 : 17 * logo.ratio, h = logo.ratio >= 1 ? 17 / logo.ratio : 17, emu = mm => Math.round(mm * 36000);
+    files.push({ name: 'xl/worksheets/_rels/sheet1.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>` });
+    files.push({ name: 'xl/drawings/drawing1.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>60000</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>30000</xdr:rowOff></xdr:from><xdr:ext cx="${emu(w)}" cy="${emu(h)}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Logo"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(w)}" cy="${emu(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>` });
+    files.push({ name: 'xl/drawings/_rels/drawing1.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.png"/></Relationships>` });
+    files.push({ name: 'xl/media/logo.png', data: logo.bytes });
+  }
+  return { blob: zipStore(files, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'), ruleRow };
+}
+
+// ---------------------------- TOMBOL UNDUH ----------------------------
+async function exportRekap(kind, format) {
+  const model = kind === 'presensi' ? buildPresensiRekapModel() : buildNilaiRekapModel();
+  showSyncOverlay(true, 'Membuat file ' + (format === 'pdf' ? 'PDF' : format === 'docx' ? 'Word' : 'Excel') + '...');
+  try {
+    const name = safeFileName(model.fileBase);
+    if (format === 'pdf') {
+      const blob = await buildRekapPdfBlob(model);
+      showSyncOverlay(false);
+      await savePdfBlob(blob, name + '.pdf');
+    } else {
+      const d = collectKopData();
+      const l = await loadLogoForPdf(d.logoUrl);
+      const logo = l ? { bytes: dataUrlToBytes(l.data), ratio: l.ratio } : null;
+      const blob = format === 'docx' ? buildRekapDocx(model, d, logo) : buildRekapXlsx(model, d, logo).blob;
+      showSyncOverlay(false);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name + '.' + format;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+    }
+    showToast('Rekap berhasil diunduh: ' + name + '.' + format, 'success');
+  } catch (err) {
+    showSyncOverlay(false);
+    console.error('Rekap error', err);
+    showToast('Gagal membuat file: ' + (err.message || err) + (format === 'pdf' ? '. Periksa koneksi internet lalu coba lagi.' : ''), 'error');
+  }
+}
+function exportPresensiToPdf() { return exportRekap('presensi', 'pdf'); }
+function exportPresensiToWord() { return exportRekap('presensi', 'docx'); }
+function exportPresensiToExcel() { return exportRekap('presensi', 'xlsx'); }
+function exportNilaiToPdf() { return exportRekap('nilai', 'pdf'); }
+function exportNilaiToWord() { return exportRekap('nilai', 'docx'); }
+function exportNilaiToExcel() { return exportRekap('nilai', 'xlsx'); }
 
 // 8. ADMINISTRASI & KAS PKBM (ADMIN)
 function renderAdministrasiView() {
