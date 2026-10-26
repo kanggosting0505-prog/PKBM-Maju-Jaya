@@ -1,6 +1,6 @@
 // Service Worker PKBM Maju Jaya
 // Strategi: network-first (data Supabase selalu terbaru), fallback ke cache saat offline.
-const CACHE_NAME = 'pkbm-cache-v6';
+const CACHE_NAME = 'pkbm-cache-v7';
 const CORE = [
   '/',
   '/index.html',
@@ -8,10 +8,10 @@ const CORE = [
   '/logo.png',
   '/favicon.ico',
   '/apple-touch-icon.png',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/maskable-192.png',
-  '/icons/maskable-512.png'
+  '/icon-192.png',
+  '/icon-512.png',
+  '/maskable-192.png',
+  '/maskable-512.png'
 ];
 
 self.addEventListener('install', (event) => {
