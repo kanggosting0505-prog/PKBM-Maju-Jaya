@@ -361,11 +361,11 @@
 
       <!-- Sidebar Footer -->
       <div class="p-3 border-t border-slate-100 space-y-1">
-        <button onclick="openInstitutionModal()" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 rounded-xl transition">
+        <button onclick="openInstitutionModal()" data-admin-only="1" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 rounded-xl transition">
           <i data-lucide="image" class="w-4 h-4 text-slate-400"></i>
           <span>Identitas & Logo PKBM</span>
         </button>
-        <button onclick="openConfigModal()" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 rounded-xl transition">
+        <button onclick="openConfigModal()" data-admin-only="1" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 rounded-xl transition">
           <i data-lucide="database" class="w-4 h-4 text-slate-400"></i>
           <span>Koneksi Supabase</span>
         </button>
@@ -399,13 +399,13 @@
           </div>
 
           <!-- Quick Actions -->
-          <button onclick="openInstitutionModal()" title="Ubah Logo & Data Lembaga" class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition md:hidden">
+          <button onclick="openInstitutionModal()" data-admin-only="1" title="Ubah Logo & Data Lembaga" class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition md:hidden">
             <i data-lucide="image" class="w-4 h-4"></i>
           </button>
           <button id="mobile-settings-btn" onclick="routeTo('pengaturan')" title="Pengaturan" class="hidden p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition">
             <i data-lucide="settings" class="w-4 h-4"></i>
           </button>
-          <button onclick="openConfigModal()" title="Pengaturan Database" class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition md:hidden">
+          <button onclick="openConfigModal()" data-admin-only="1" title="Pengaturan Database" class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition md:hidden">
             <i data-lucide="database" class="w-4 h-4"></i>
           </button>
           <button onclick="handleLogout()" title="Keluar" class="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition md:hidden">
@@ -952,6 +952,7 @@ function closeFormModal() {
 
 // LOGO & IDENTITAS PKBM HANDLER
 function openInstitutionModal() {
+  if (currentUser && currentUser.role !== 'admin') { showToast('Identitas & Logo PKBM hanya bisa diubah oleh Admin.', 'warning'); return; }
   const profile = getInstitutionProfile();
   document.getElementById('cfg-pkbm-nama').value = profile.nama_pkbm;
   document.getElementById('cfg-pkbm-npsn').value = profile.npsn;
@@ -1284,6 +1285,9 @@ function renderNavigation() {
       <span>${item.label}</span>
     </button>
   `).join('');
+
+  // Menu Identitas & Logo PKBM dan Koneksi Supabase: hanya tampil untuk admin
+  document.querySelectorAll('[data-admin-only]').forEach(el => { el.style.display = currentUser.role === 'admin' ? '' : 'none'; });
 
   // Tombol Pengaturan di header HP hanya untuk admin
   const mobSet = document.getElementById('mobile-settings-btn');
@@ -2878,9 +2882,9 @@ function renderRaportView() {
           <button onclick="routeTo('penilaian')" class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
             <i data-lucide="calculator" class="w-4 h-4"></i> Presensi Nilai
           </button>
-          <button onclick="openInstitutionModal()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+          ${currentUser.role === 'admin' ? `<button onclick="openInstitutionModal()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
             <i data-lucide="image" class="w-4 h-4"></i> Atur Logo & Kop
-          </button>
+          </button>` : ''}
           <button onclick="openModalEditRaport('${raportData.id}')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
             <i data-lucide="edit-3" class="w-4 h-4"></i> Input Nilai & Pejabat Raport
           </button>
@@ -3617,7 +3621,7 @@ function raportTotals(mapel) {
   const jumlah = nums.reduce((a, b) => a + b, 0);
   const rata = nums.length ? jumlah / nums.length : 0;
   const fmt = (n, dec) => n.toLocaleString('id-ID', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-  return { jumlah: fmt(jumlah, Number.isInteger(jumlah) ? 0 : 2), rata: fmt(rata, 2) };
+  return { jumlah: fmt(jumlah, Number.isInteger(jumlah) ? 0 : 2), rata: fmt(rata, 1) };
 }
 
 // Menggambar seluruh raport. pdf = instance jsPDF, d = data, logo = {data, ratio} atau null
@@ -3732,8 +3736,10 @@ function drawRaportPdf(pdf, d, logo) {
   });
   const headH = Math.max(...cols.map(c => c.headL.length)) * LHB;
   const maxName = Math.max(...cols.map(c => c.nameL.length));
-  const sigH = headH + SPACE + maxName * NLH + 2 + 6;
-  if (y + boxH + 7 + sigH > YMAX) { pdf.addPage('a4', 'portrait'); y = MT; }
+  // tinggi isi tanda tangan (dari baris pertama sampai NIP) -> blok TTD dirapatkan ke batas bawah area cetak
+  const sigContentH = headH + SPACE + 3.6 + (maxName - 1) * NLH + 1.9 + 4.3 + 0.8;
+  const SIGB = PH - 10;
+  if (y + boxH + 7 + sigContentH > SIGB) { pdf.addPage('a4', 'portrait'); y = MT; }
 
   pdf.setLineWidth(0.3);
   [[ML, 'B'], [ML + BW + 4, 'C']].forEach(([x0, k]) => {
@@ -3750,7 +3756,7 @@ function drawRaportPdf(pdf, d, logo) {
   pdf.setFillColor(214, 214, 214); pdf.setLineWidth(0.3);
   pdf.roundedRect(cx0 + PADB, y + badgeTop, bw, badgeH, 1.8, 1.8, 'FD');
   sL.forEach((ln, i) => put(ln, cx0 + PADB + 3, bl(y + badgeTop, badgeH, LHB, 9.5, sL.length, i), 9.5, 'bold'));
-  y += boxH + 7;
+  y = Math.max(y + boxH + 7, SIGB - sigContentH);
 
   cols.forEach((c, i) => {
     c.headL.forEach((ln, k) => put(ln, SC[i], y + 3.6 + k * LHB, 9.5, 'normal', 'center'));
@@ -4079,8 +4085,10 @@ function drawRekapPdf(pdf, model, d, logo) {
   pdf.setFillColor(255, 255, 255);
 
   // ---- keterangan + tanda tangan (satu blok, tidak terpisah halaman) ----
-  const SIGH = 44;
-  if (y + 8 + SIGH > YMAX) { pdf.addPage([F4_H, F4_W], 'landscape'); y = MT; }
+  const LHB = 4.4, SPACE = 22, cxs = [ML + CW * 0.25, ML + CW * 0.75];
+  const sigContentH = 2 * LHB + SPACE + 3.6 + 1.9 + 4.3 + 0.8;   // dari baris pertama sampai NIP
+  const SIGB = PH - 10;                                          // batas bawah area cetak
+  if (y + 11 + sigContentH > SIGB) { pdf.addPage([F4_H, F4_W], 'landscape'); y = MT; }
   y += 5;
   if (model.kind === 'presensi') {
     put('Keterangan:', ML, y, 8.5, 'bold');
@@ -4092,8 +4100,7 @@ function drawRekapPdf(pdf, model, d, logo) {
   } else {
     put(model.legend, ML, y, 8.5, 'normal');
   }
-  y += 6;
-  const LHB = 4.4, SPACE = 22, cxs = [ML + CW * 0.25, ML + CW * 0.75];
+  y = Math.max(y + 6, SIGB - sigContentH);                       // tanda tangan di paling bawah halaman
   const blocks = [
     { head: ['Mengetahui,', 'Tutor Pembimbing / Wali Kelas'], name: '( ............................ )', nip: null },
     { head: [d.kota + ', ' + d.tanggal, 'Kepala ' + d.pkbmClean], name: d.kepalaNama, nip: d.kepalaNip }
@@ -4208,13 +4215,14 @@ function buildRekapDocx(model, d, logo) {
   // TANDA TANGAN (satu baris tabel, tidak terpisah halaman)
   const half = Math.round(kopW / 2);
   const sigCell = (lines) => tcP(half, lines, 'top');
-  const sig = `<w:tbl><w:tblPr><w:tblW w:w="${kopW}" w:type="dxa"/>${noB}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="${half}"/><w:gridCol w:w="${kopW - half}"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>`
-    + sigCell(para('Mengetahui,', { jc: 'center', keep: 1 }) + para('Tutor Pembimbing / Wali Kelas', { jc: 'center', b: 1, keep: 1 }) + para('', { after: 900, keep: 1 }) + para('( ............................ )', { jc: 'center', b: 1, keep: 1 }))
-    + sigCell(para(d.kota + ', ' + d.tanggal, { jc: 'center', keep: 1 }) + para('Kepala ' + d.pkbmClean, { jc: 'center', b: 1, keep: 1 }) + para('', { after: 900, keep: 1 }) + para(d.kepalaNama, { jc: 'center', b: 1, u: 1, keep: 1 }) + para('NIP: ' + d.kepalaNip, { jc: 'center', sz: 18 }))
+  const sigTop = mm2tw(F4_H - 10 - 41);   // tabel melayang: tepi bawah TTD di 10 mm dari tepi bawah kertas
+  const sig = `<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="page" w:horzAnchor="margin" w:tblpX="0" w:tblpY="${sigTop}"/><w:tblOverlap w:val="never"/><w:tblW w:w="${kopW}" w:type="dxa"/>${noB}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="${half}"/><w:gridCol w:w="${kopW - half}"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="${mm2tw(41)}" w:hRule="atLeast"/></w:trPr>`
+    + sigCell(para('Mengetahui,', { jc: 'center', keep: 1 }) + para('Tutor Pembimbing / Wali Kelas', { jc: 'center', b: 1, keep: 1 }) + para('', { after: 1250, keep: 1 }) + para('( ............................ )', { jc: 'center', b: 1, keep: 1 }))
+    + sigCell(para(d.kota + ', ' + d.tanggal, { jc: 'center', keep: 1 }) + para('Kepala ' + d.pkbmClean, { jc: 'center', b: 1, keep: 1 }) + para('', { after: 1250, keep: 1 }) + para(d.kepalaNama, { jc: 'center', b: 1, u: 1, keep: 1 }) + para('NIP: ' + d.kepalaNip, { jc: 'center', sz: 18 }))
     + '</w:tr></w:tbl>';
 
   const legend = model.kind === 'presensi' ? 'Keterangan:  \u25CF = Hadir     S = Sakit     I = Izin     A = Alfa' : model.legend;
-  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><w:body>${kop}${rule}${para(model.title, { jc: 'center', b: 1, sz: 23, before: 60 })}${para(model.subtitle, { jc: 'center', sz: 19, after: 140 })}${table}${para(legend, { sz: 17, before: 100, after: 100 })}${sig}<w:sectPr><w:pgSz w:w="${mm2tw(F4_W)}" w:h="${mm2tw(F4_H)}" w:orient="landscape"/><w:pgMar w:top="567" w:right="${mm2tw(REKAP_ML)}" w:bottom="680" w:left="${mm2tw(REKAP_ML)}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><w:body>${kop}${rule}${para(model.title, { jc: 'center', b: 1, sz: 23, before: 60 })}${para(model.subtitle, { jc: 'center', sz: 19, after: 140 })}${table}${para(legend, { sz: 17, before: 100, after: 100 })}${sig}<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/></w:pPr></w:p><w:sectPr><w:pgSz w:w="${mm2tw(F4_W)}" w:h="${mm2tw(F4_H)}" w:orient="landscape"/><w:pgMar w:top="567" w:right="${mm2tw(REKAP_ML)}" w:bottom="680" w:left="${mm2tw(REKAP_ML)}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`;
   const files = [
     { name: '[Content_Types].xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>` },
     { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>` },
@@ -4528,6 +4536,7 @@ async function deleteKas(id) {
 
 // 9. CONFIGURATION MODAL & SUPABASE AUTO-SETUP
 function openConfigModal() {
+  if (currentUser && currentUser.role !== 'admin') { showToast('Koneksi Supabase hanya bisa dibuka oleh Admin.', 'warning'); return; }
   const savedCfg = localStorage.getItem(STORAGE_KEYS.CONFIG);
   if (savedCfg) {
     try {
