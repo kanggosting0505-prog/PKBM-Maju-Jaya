@@ -4765,6 +4765,39 @@ function removeFromOutbox(chunk) {
 }
 
 // ---------- Kirim perubahan ke Supabase ----------
+// Hapus yang DIVERIFIKASI: Supabase tidak memberi error saat penghapusan diblokir diam-diam
+// oleh aturan akses (RLS) -> data tampak terhapus di layar tetapi muncul lagi di sinkron berikutnya.
+async function deleteVerified(table, pk, ids) {
+  const r = await supabaseClient.from(table).delete().in(pk, ids).select(pk);
+  if (r.error) return r;
+  const gone = new Set((r.data || []).map(x => x[pk]));
+  const left = ids.filter(i => !gone.has(i));
+  if (!left.length) return r;
+  const c = await supabaseClient.from(table).select(pk).in(pk, left);
+  if (c.error) return c;
+  if ((c.data || []).length) {
+    return { error: { code: '42501', message: 'row-level security: penghapusan ditolak server' } };
+  }
+  return r;
+}
+
+let lastSessionWarnAt = 0;
+async function adminSessionOk() {
+  if (!currentUser || currentUser.role !== 'admin') return true;
+  let has = false;
+  try {
+    const { data } = await supabaseClient.auth.getSession();
+    has = !!(data && data.session);
+  } catch (e) { return true; } // gagal cek (mis. offline): biarkan alur normal yang menangani
+  if (has) return true;
+  cloudHealth = { ok: false, message: 'Sesi login Admin sudah berakhir, perubahan belum dikirim ke Supabase. Keluar lalu login lagi.', offline: false };
+  if (Date.now() - lastSessionWarnAt > 60000) {
+    lastSessionWarnAt = Date.now();
+    showToast('Sesi login Admin berakhir. Perubahan BELUM tersimpan di Supabase. Silakan keluar lalu login lagi.', 'error');
+  }
+  return false;
+}
+
 async function flushOutbox() {
   if (!isCloudMode()) return;
   if (flushing) { flushAgain = true; return; }
@@ -4773,6 +4806,7 @@ async function flushOutbox() {
   let revert = false;
   let deniedTables = new Set();
   try {
+    if (pendingCount() > 0 && !(await adminSessionOk())) return;
     outer:
     do {
       flushAgain = false;
@@ -4792,7 +4826,7 @@ async function flushOutbox() {
             if (op === 'upsert') {
               res = await supabaseClient.from(table).upsert(chunk.map(([, e]) => e.row), { onConflict: pk });
             } else {
-              res = await supabaseClient.from(table).delete().in(pk, chunk.map(([, e]) => e.id));
+              res = await deleteVerified(table, pk, chunk.map(([, e]) => e.id));
             }
           } catch (ex) {
             res = { error: ex };
@@ -4927,6 +4961,15 @@ async function syncFromCloud() {
   }
 }
 
+function cloudRowCount() {
+  let n = 0;
+  try {
+    const c = JSON.parse(localStorage.getItem(CLOUD_CACHE_KEY) || 'null') || {};
+    SYNC_TABLES.forEach(d => { n += (c[d.key] || []).length; });
+  } catch (e) {}
+  return n;
+}
+
 // ---------- Inisialisasi pertama: jadikan data perangkat ini sebagai data awal Supabase ----------
 async function initializeCloudFromLocal() {
   if (!isCloudMode() || !currentUser || currentUser.role !== 'admin') return false;
@@ -4937,6 +4980,14 @@ async function initializeCloudFromLocal() {
     return false;
   }
 
+  const existing = cloudRowCount();
+  if (existing > 0) {
+    const sure = await customConfirm(
+      `PERINGATAN: Supabase saat ini sudah berisi ${existing} baris data. Melanjutkan akan MENGHAPUS semuanya dan menggantinya dengan data di perangkat ini (bisa berupa data contoh/lama). Pada hampir semua kasus pilih BATAL. Tetap lanjutkan?`,
+      'Timpa Data Supabase?'
+    );
+    if (!sure) return false;
+  }
   const counts = SYNC_TABLES.map(d => `${(local[d.key] || []).length} ${d.key.replace(/_/g, ' ')}`).join(', ');
   const ok = await customConfirm(
     `Data di perangkat ini (${counts}) akan dijadikan data resmi di Supabase. Data di Supabase yang tidak ada di perangkat ini akan DIHAPUS agar sama persis. Lanjutkan?`,
@@ -4989,7 +5040,7 @@ async function cloudPostLoginSetup() {
 
   if (currentUser.role === 'admin' && r.ok && !cloudInitialized && !initPromptShown) {
     initPromptShown = true;
-    if (localStorage.getItem(STORAGE_KEYS.DATA)) {
+    if (cloudRowCount() === 0 && localStorage.getItem(STORAGE_KEYS.DATA)) {
       await initializeCloudFromLocal();
     } else {
       enqueueOp('app_settings', 'key', 'cloud_initialized', 'upsert', { key: 'cloud_initialized', value: true });
