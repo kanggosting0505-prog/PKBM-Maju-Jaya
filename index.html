@@ -1718,6 +1718,72 @@ function filterWargaBelajarByPaket(paket) {
   routeTo('warga_belajar');
 }
 
+const expandedWb = new Set();
+function toggleWbDetail(id) {
+  if (expandedWb.has(id)) expandedWb.delete(id); else expandedWb.add(id);
+  routeTo('warga_belajar');
+}
+function toggleAllWbDetail() {
+  const db = getDb();
+  let list = db.warga_belajar;
+  if (selectedPaketFilter !== 'Semua') list = list.filter(w => w.paket === selectedPaketFilter);
+  const allOpen = list.length > 0 && list.every(w => expandedWb.has(w.id));
+  list.forEach(w => { if (allOpen) expandedWb.delete(w.id); else expandedWb.add(w.id); });
+  routeTo('warga_belajar');
+}
+
+function renderWbDetailPanel(wb) {
+  const val = (x) => {
+    const t = (x === undefined || x === null) ? '' : String(x).trim();
+    return t ? escapeHtml(t) : '<span class="text-slate-300">-</span>';
+  };
+  const mono = (x) => {
+    const t = (x === undefined || x === null) ? '' : String(x).trim();
+    return t ? `<span class="font-mono tracking-wide">${escapeHtml(t)}</span>` : '<span class="text-slate-300">-</span>';
+  };
+  const gender = wb.jenis_kelamin === 'P' || /perempuan/i.test(wb.jenis_kelamin || '') ? 'Perempuan'
+               : (wb.jenis_kelamin ? 'Laki-laki' : '');
+  const row = (label, html) => `
+    <div class="grid grid-cols-[112px_1fr] gap-2 py-1.5 border-b border-slate-100 last:border-0">
+      <dt class="text-slate-500">${label}</dt>
+      <dd class="text-slate-800 font-medium break-words min-w-0">${html}</dd>
+    </div>`;
+  const card = (icon, title, rows) => `
+    <div class="bg-white rounded-xl border border-slate-200 p-3.5 shadow-sm">
+      <div class="flex items-center gap-2 mb-1.5 pb-2 border-b border-slate-200">
+        <i data-lucide="${icon}" class="w-3.5 h-3.5 text-blue-600"></i>
+        <h4 class="text-[11px] font-bold uppercase tracking-wider text-slate-700">${title}</h4>
+      </div>
+      <dl class="text-xs">${rows}</dl>
+    </div>`;
+
+  return `
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3.5">
+      ${card('user', 'Data Peserta',
+        row('NISN', mono(wb.nisn)) +
+        row('NIK', mono(wb.nik)) +
+        row('Nama Lengkap', val(wb.nama_lengkap)) +
+        row('Jenis Kelamin', val(gender)) +
+        row('Program Paket', val(wb.paket)) +
+        row('Tingkat / Fase', val(wb.tingkat)) +
+        row('No. WhatsApp / HP', val(wb.no_hp)) +
+        row('Status', val(wb.status || 'Aktif')))}
+      ${card('users', 'Data Keluarga',
+        row('Nomor KK', mono(wb.no_kk)) +
+        row('Jumlah Saudara', val(wb.jumlah_saudara)) +
+        row('Nama Ayah', val(wb.nama_ayah)) +
+        row('NIK Ayah', mono(wb.nik_ayah)) +
+        row('Nama Ibu', val(wb.nama_ibu)) +
+        row('NIK Ibu', mono(wb.nik_ibu)))}
+      ${card('map-pin', 'Alamat Domisili',
+        row('Alamat', val(wb.alamat)) +
+        row('Desa / Kelurahan', val(wb.desa_kelurahan)) +
+        row('Kecamatan', val(wb.kecamatan)) +
+        row('Kabupaten / Kota', val(wb.kabupaten)) +
+        row('Provinsi', val(wb.provinsi)))}
+    </div>`;
+}
+
 function renderWargaBelajarView() {
   const db = getDb();
   let list = db.warga_belajar;
@@ -1748,6 +1814,11 @@ function renderWargaBelajarView() {
           <table class="w-full text-left border-collapse text-xs">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-semibold">
+                <th class="p-3.5 w-10">
+                  <button onclick="toggleAllWbDetail()" title="Buka / tutup semua detail" class="p-1 rounded-md hover:bg-slate-200 text-slate-500">
+                    <i data-lucide="chevrons-up-down" class="w-3.5 h-3.5"></i>
+                  </button>
+                </th>
                 <th class="p-3.5">NISN / ID</th>
                 <th class="p-3.5">Nama Peserta</th>
                 <th class="p-3.5">Program Paket</th>
@@ -1759,9 +1830,17 @@ function renderWargaBelajarView() {
             </thead>
             <tbody class="divide-y divide-slate-100">
               ${list.length ? list.map(wb => `
-                <tr class="hover:bg-blue-50/40 transition">
-                  <td class="p-3.5 font-mono font-semibold text-slate-700">${wb.nisn}</td>
-                  <td class="p-3.5 font-bold text-slate-900">${wb.nama_lengkap}</td>
+                <tr class="hover:bg-blue-50/40 transition ${expandedWb.has(wb.id) ? 'bg-blue-50/30' : ''}">
+                  <td class="p-3.5 w-10">
+                    <button onclick="toggleWbDetail('${wb.id}')" title="${expandedWb.has(wb.id) ? 'Tutup detail' : 'Lihat detail lengkap'}" class="p-1 rounded-md hover:bg-slate-200 text-slate-500 transition">
+                      <i data-lucide="${expandedWb.has(wb.id) ? 'chevron-down' : 'chevron-right'}" class="w-4 h-4"></i>
+                    </button>
+                  </td>
+                  <td class="p-3.5 font-mono font-semibold text-slate-700">${escapeHtml(wb.nisn ?? "")}</td>
+                  <td class="p-3.5">
+                    <div class="font-bold text-slate-900">${escapeHtml(wb.nama_lengkap ?? "")}</div>
+                    ${(wb.nama_ayah || wb.nama_ibu) ? `<div class="text-[10px] text-slate-400 mt-0.5">${[wb.nama_ayah ? 'Ayah: ' + escapeHtml(wb.nama_ayah) : '', wb.nama_ibu ? 'Ibu: ' + escapeHtml(wb.nama_ibu) : ''].filter(Boolean).join(' · ')}</div>` : ''}
+                  </td>
                   <td class="p-3.5">
                     <span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${
                       wb.paket === 'Paket A' ? 'bg-blue-100 text-blue-700' :
@@ -1791,9 +1870,14 @@ function renderWargaBelajarView() {
                     </div>
                   </td>
                 </tr>
+                ${expandedWb.has(wb.id) ? `
+                <tr class="bg-slate-50/80">
+                  <td></td>
+                  <td colspan="7" class="p-4 pt-3">${renderWbDetailPanel(wb)}</td>
+                </tr>` : ''}
               `).join('') : `
                 <tr>
-                  <td colspan="7" class="p-8 text-center text-slate-400">Belum ada data warga belajar.</td>
+                  <td colspan="8" class="p-8 text-center text-slate-400">Belum ada data warga belajar.</td>
                 </tr>
               `}
             </tbody>
