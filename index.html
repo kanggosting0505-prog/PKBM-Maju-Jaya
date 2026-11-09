@@ -637,6 +637,7 @@ function saveInstitutionProfileData(data) {
 
 // INITIAL SEED DATA
 const INITIAL_DATA = {
+  mata_pelajaran: [],
   guru: [
     {
       id: 'gr-001',
@@ -865,6 +866,7 @@ function getDb() {
     } else if (!data.penilaian) {
       data.penilaian = INITIAL_DATA.penilaian;
     }
+    if (!Array.isArray(data.mata_pelajaran)) data.mata_pelajaran = [];
     return data;
   } catch (e) {
     return isCloudMode() ? emptyDb() : INITIAL_DATA;
@@ -1074,8 +1076,8 @@ function switchLoginRole(role) {
     input.placeholder = "admin@pkbm.sch.id";
   } else if (role === 'guru') {
     tabGuru.className = "flex-1 py-2 rounded-lg text-center transition bg-white text-emerald-600 shadow-sm";
-    label.textContent = "ID Guru / NIP Tutor";
-    input.placeholder = "GURU01 atau 19800412...";
+    label.textContent = "Username / NIP Tutor";
+    input.placeholder = "username atau NIP";
   } else {
     tabSiswa.className = "flex-1 py-2 rounded-lg text-center transition bg-white text-purple-600 shadow-sm";
     label.textContent = "NISN Warga Belajar";
@@ -1165,7 +1167,7 @@ async function handleLoginSubmit(e) {
 
   // 2. GURU / TUTOR LOGIN
   if (selectedLoginRole === 'guru') {
-    const guru = db.guru.find(g => (g.nip_guru.toLowerCase() === identifier.toLowerCase() || g.id === identifier || g.nama_lengkap.toLowerCase().includes(identifier.toLowerCase())) && g.password === password);
+    const guru = db.guru.find(g => ((g.username || '').toLowerCase() === identifier.toLowerCase() || g.nip_guru.toLowerCase() === identifier.toLowerCase() || g.id === identifier || g.nama_lengkap.toLowerCase().includes(identifier.toLowerCase())) && g.password === password);
     if (guru) {
       loginSuccess({
         role: 'guru',
@@ -1248,7 +1250,7 @@ function updateUserBadge() {
   
   const roleLabels = {
     admin: 'Admin Pengelola',
-    guru: `Tutor: ${currentUser.mapel || 'Guru'}`,
+    guru: `Tutor: ${formatMapel(currentUser.mapel) === '-' ? 'Guru' : formatMapel(currentUser.mapel)}`,
     siswa: `Warga Belajar (${currentUser.paket || 'Siswa'})`
   };
   document.getElementById('user-role-badge').textContent = roleLabels[currentUser.role] || currentUser.role;
@@ -2156,6 +2158,239 @@ async function deleteWargaBelajar(id) {
 }
 
 // 3. GURU & TUTOR VIEW
+// ==============================================================================
+// MASTER MATA PELAJARAN (diatur di menu Pengaturan, dipakai Data Guru, Jadwal & Presensi Nilai)
+// ==============================================================================
+const PAKET_LIST = ['Paket A', 'Paket B', 'Paket C'];
+function escAttr(t) { return escapeHtml(t == null ? '' : t).replace(/"/g, '&quot;'); }
+function parseMapel(str) { return String(str || '').split(';').map(x => x.trim()).filter(Boolean); }
+function joinMapel(arr) { return arr.join('; '); }
+function formatMapel(str) { return parseMapel(str).join(', ') || '-'; }
+function mapelPakets(m) {
+  const list = String(m.paket || '').split(',').map(x => x.trim()).filter(Boolean);
+  return list.length ? list : PAKET_LIST.slice();
+}
+// Daftar mapel untuk satu paket. Jika master masih kosong, pakai daftar bawaan agar fitur tetap jalan.
+function mapelForPaket(paket) {
+  const master = getDb().mata_pelajaran || [];
+  if (!master.length) return (MAPEL_BY_PAKET[paket] || []).slice();
+  return master.filter(m => mapelPakets(m).includes(paket)).map(m => m.nama);
+}
+
+function renderMapelCard() {
+  const db = getDb();
+  const list = db.mata_pelajaran || [];
+  const usedBy = (nama) => db.guru.filter(g => parseMapel(g.mata_pelajaran).some(x => x.toLowerCase() === nama.toLowerCase())).length;
+  return `
+    <div class="glass-card rounded-2xl p-5 md:p-6 border border-slate-200 space-y-4">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <i data-lucide="book-open-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-800 text-sm md:text-base">Mata Pelajaran</h3>
+            <p class="text-[11px] text-slate-500">Daftar ini dipakai pada Data Guru, Jadwal & Modul, dan Presensi Nilai.</p>
+          </div>
+        </div>
+        <button onclick="openModalMapel()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-md shadow-blue-500/20">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i> Tambah Mapel
+        </button>
+      </div>
+
+      ${list.length ? `
+        <div class="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+          ${list.map(m => `
+            <div class="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-white">
+              <div class="min-w-0">
+                <div class="text-xs font-bold text-slate-800 break-words">${escapeHtml(m.nama)}</div>
+                <div class="flex flex-wrap gap-1 mt-1">
+                  ${mapelPakets(m).map(pk => `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold ${pk === 'Paket A' ? 'bg-blue-100 text-blue-700' : pk === 'Paket B' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}">${pk}</span>`).join('')}
+                  <span class="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-500">${usedBy(m.nama)} tutor</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button onclick="openModalMapel('${m.id}')" title="Edit" class="p-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
+                <button onclick="deleteMapel('${m.id}')" title="Hapus" class="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : `
+        <div class="border border-dashed border-slate-300 rounded-xl p-5 text-center bg-slate-50/60">
+          <p class="text-xs text-slate-600 font-semibold">Daftar mata pelajaran masih kosong.</p>
+          <p class="text-[11px] text-slate-500 mt-1">Isi otomatis lalu ubah seperlunya, atau tambahkan satu per satu.</p>
+          <div class="flex flex-wrap justify-center gap-2 mt-3">
+            <button onclick="importMapelFromGuru()" class="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700">Impor dari Data Guru</button>
+            <button onclick="seedMapelStandar()" class="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700">Isi Daftar Standar</button>
+          </div>
+        </div>
+      `}
+    </div>`;
+}
+
+function openModalMapel(id) {
+  const db = getDb();
+  const m = id ? (db.mata_pelajaran || []).find(x => x.id === id) : null;
+  const pakets = m ? mapelPakets(m) : PAKET_LIST;
+  const content = `
+    <form onsubmit="saveMapel(event)" class="space-y-3.5">
+      <input type="hidden" id="form-mp-id" value="${m ? m.id : ''}">
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Nama Mata Pelajaran</label>
+        <input type="text" id="form-mp-nama" required value="${m ? escAttr(m.nama) : ''}" placeholder="Contoh: Bahasa Indonesia" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1.5">Berlaku untuk Program Paket</label>
+        <div class="flex flex-wrap gap-2">
+          ${PAKET_LIST.map(pk => `
+            <label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 cursor-pointer">
+              <input type="checkbox" class="form-mp-paket" value="${pk}" ${pakets.includes(pk) ? 'checked' : ''}> ${pk}
+            </label>`).join('')}
+        </div>
+      </div>
+      <div class="mt-5 pt-3 border-t border-slate-100 flex gap-2 justify-end">
+        <button type="button" onclick="closeFormModal()" class="px-4 py-2 text-xs font-medium border border-slate-200 rounded-xl hover:bg-slate-50">Batal</button>
+        <button type="submit" class="px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700">Simpan</button>
+      </div>
+    </form>`;
+  openFormModal(m ? 'Edit Mata Pelajaran' : 'Tambah Mata Pelajaran', content);
+}
+
+function saveMapel(e) {
+  e.preventDefault();
+  const db = getDb();
+  const id = document.getElementById('form-mp-id').value;
+  const nama = document.getElementById('form-mp-nama').value.trim().replace(/\s+/g, ' ');
+  const pakets = Array.from(document.querySelectorAll('.form-mp-paket:checked')).map(c => c.value);
+  if (!nama) return;
+  if (nama.includes(';')) { showToast("Nama mapel tidak boleh memuat tanda titik koma (;).", 'warning'); return; }
+  if (!pakets.length) { showToast('Pilih minimal satu program paket.', 'warning'); return; }
+  const list = db.mata_pelajaran || (db.mata_pelajaran = []);
+  if (list.some(x => x.id !== id && x.nama.toLowerCase() === nama.toLowerCase())) {
+    showToast('Mata pelajaran dengan nama itu sudah ada.', 'warning');
+    return;
+  }
+  const paketStr = pakets.join(',');
+  if (id) {
+    const idx = list.findIndex(x => x.id === id);
+    if (idx === -1) return;
+    const oldName = list[idx].nama;
+    list[idx] = { ...list[idx], nama, paket: paketStr };
+    if (oldName !== nama) renameMapelEverywhere(db, oldName, nama);
+  } else {
+    list.push({ id: 'mp-' + Date.now(), nama, paket: paketStr });
+  }
+  saveDb(db);
+  closeFormModal();
+  routeTo('pengaturan');
+  showToast('Mata pelajaran berhasil disimpan!', 'success');
+}
+
+// Ganti nama mapel di semua data yang memakainya agar tetap cocok
+function renameMapelEverywhere(db, oldName, newName) {
+  const same = (x) => String(x || '').trim().toLowerCase() === oldName.toLowerCase();
+  db.guru.forEach(g => {
+    const toks = parseMapel(g.mata_pelajaran);
+    if (toks.some(same)) g.mata_pelajaran = joinMapel(toks.map(t => same(t) ? newName : t));
+  });
+  db.jadwal_modul.forEach(j => { if (same(j.mata_pelajaran)) j.mata_pelajaran = newName; });
+  db.penilaian.forEach(n => { if (same(n.mapel)) n.mapel = newName; });
+  (db.raport || []).forEach(r => {
+    if (Array.isArray(r.nilai_mapel)) r.nilai_mapel.forEach(m => { if (same(m.mapel)) m.mapel = newName; });
+  });
+}
+
+async function deleteMapel(id) {
+  const db = getDb();
+  const m = (db.mata_pelajaran || []).find(x => x.id === id);
+  if (!m) return;
+  const pakai = db.guru.filter(g => parseMapel(g.mata_pelajaran).some(x => x.toLowerCase() === m.nama.toLowerCase())).length;
+  const msg = pakai
+    ? `Hapus mapel "${m.nama}"? Mapel ini masih tercatat pada ${pakai} tutor. Data tutor tidak ikut terhapus, tetapi mapel ini tidak lagi muncul di pilihan.`
+    : `Hapus mapel "${m.nama}" dari daftar?`;
+  if (!(await customConfirm(msg, 'Hapus Mata Pelajaran'))) return;
+  db.mata_pelajaran = db.mata_pelajaran.filter(x => x.id !== id);
+  saveDb(db);
+  routeTo('pengaturan');
+  showToast('Mata pelajaran dihapus dari daftar.', 'info');
+}
+
+function addMapelNames(db, entries) {
+  const list = db.mata_pelajaran || (db.mata_pelajaran = []);
+  let added = 0;
+  entries.forEach(([nama, pakets], i) => {
+    if (!nama || list.some(x => x.nama.toLowerCase() === nama.toLowerCase())) return;
+    list.push({ id: 'mp-' + Date.now() + '-' + i, nama, paket: (pakets && pakets.length ? pakets : PAKET_LIST).join(',') });
+    added++;
+  });
+  return added;
+}
+function seedMapelStandar() {
+  const db = getDb();
+  const map = {};
+  Object.entries(MAPEL_BY_PAKET).forEach(([pk, arr]) => arr.forEach(n => { (map[n] = map[n] || []).push(pk); }));
+  const n = addMapelNames(db, Object.entries(map));
+  saveDb(db);
+  routeTo('pengaturan');
+  showToast(n + ' mata pelajaran standar ditambahkan. Silakan ubah seperlunya.', 'success');
+}
+function importMapelFromGuru() {
+  const db = getDb();
+  const names = [];
+  db.guru.forEach(g => parseMapel(g.mata_pelajaran).forEach(n => { if (!names.some(x => x.toLowerCase() === n.toLowerCase())) names.push(n); }));
+  if (!names.length) { showToast('Belum ada mapel pada Data Guru untuk diimpor.', 'warning'); return; }
+  const n = addMapelNames(db, names.map(x => [x, null]));
+  saveDb(db);
+  routeTo('pengaturan');
+  showToast(n + ' mata pelajaran diimpor dari Data Guru.', 'success');
+}
+
+// ---- Pilihan mapel pada form Guru (dropdown + chip) ----
+let grMapelSel = [];
+function grMapelRender() {
+  const box = document.getElementById('form-gr-mapel-chips');
+  const sel = document.getElementById('form-gr-mapel-select');
+  const hint = document.getElementById('form-gr-mapel-hint');
+  if (!box || !sel) return;
+  const master = (getDb().mata_pelajaran || []).map(m => m.nama);
+  const inMaster = new Set(master.map(x => x.toLowerCase()));
+  box.innerHTML = grMapelSel.length
+    ? grMapelSel.map((n, i) => `
+        <span class="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-[11px] font-semibold ${inMaster.has(n.toLowerCase()) ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}" title="${inMaster.has(n.toLowerCase()) ? '' : 'Belum ada di daftar Pengaturan'}">
+          ${escapeHtml(n)}
+          <button type="button" onclick="grMapelRemove(${i})" class="w-4 h-4 rounded-full hover:bg-black/10 leading-none text-sm">&times;</button>
+        </span>`).join('')
+    : '<span class="text-[11px] text-slate-400">Belum ada mata pelajaran dipilih.</span>';
+  const chosen = new Set(grMapelSel.map(x => x.toLowerCase()));
+  const opts = master.filter(n => !chosen.has(n.toLowerCase()));
+  sel.innerHTML = '<option value="">— Pilih mata pelajaran —</option>' + opts.map(n => `<option value="${escAttr(n)}">${escapeHtml(n)}</option>`).join('');
+  sel.disabled = !opts.length;
+  if (hint) {
+    hint.classList.toggle('hidden', master.length > 0);
+  }
+}
+function grMapelAdd(selEl) {
+  const v = selEl.value;
+  if (v && !grMapelSel.some(x => x.toLowerCase() === v.toLowerCase())) grMapelSel.push(v);
+  grMapelRender();
+}
+function grMapelRemove(i) { grMapelSel.splice(i, 1); grMapelRender(); }
+function goToMapelSettings() { closeFormModal(); routeTo('pengaturan'); }
+
+function refreshJadwalMapelOptions(selected) {
+  const paketEl = document.getElementById('form-jm-paket');
+  const sel = document.getElementById('form-jm-mapel');
+  if (!paketEl || !sel) return;
+  const keep = selected !== undefined ? selected : sel.value;
+  let names = mapelForPaket(paketEl.value);
+  if (keep && !names.some(n => n.toLowerCase() === String(keep).toLowerCase())) names = [keep, ...names];
+  sel.innerHTML = names.length
+    ? names.map(n => `<option value="${escAttr(n)}">${escapeHtml(n)}</option>`).join('')
+    : '<option value="">(Belum ada mapel — tambah di Pengaturan)</option>';
+  if (keep) sel.value = keep;
+}
+
 function renderGuruView() {
   const db = getDb();
   return `
@@ -2185,12 +2420,16 @@ function renderGuruView() {
                 </span>
               </div>
               <h4 class="font-extrabold text-sm text-slate-900">${g.nama_lengkap}</h4>
-              <p class="text-xs text-blue-600 font-medium mt-0.5">${g.mata_pelajaran}</p>
+              <p class="text-xs text-blue-600 font-medium mt-0.5">${escapeHtml(formatMapel(g.mata_pelajaran))}</p>
               
               <div class="mt-4 pt-3 border-t border-slate-100 space-y-1 text-xs text-slate-600">
                 <div class="flex items-center gap-2">
                   <i data-lucide="phone" class="w-3.5 h-3.5 text-slate-400"></i>
                   <span>${g.no_hp || '-'}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>Username: <code class="bg-slate-100 px-1 py-0.5 rounded text-[10px]">${g.username ? escapeHtml(g.username) : '-'}</code></span>
                 </div>
                 <div class="flex items-center gap-2">
                   <i data-lucide="key" class="w-3.5 h-3.5 text-slate-400"></i>
@@ -2213,6 +2452,7 @@ function renderGuruView() {
 }
 
 function openModalAddGuru() {
+  grMapelSel = [];
   const content = `
     <form onsubmit="saveGuru(event)" class="space-y-3.5">
       <input type="hidden" id="form-gr-id" value="">
@@ -2226,16 +2466,28 @@ function openModalAddGuru() {
       </div>
       <div>
         <label class="block text-xs font-semibold text-slate-700 mb-1">Mata Pelajaran yang Diampu</label>
-        <input type="text" id="form-gr-mapel" required placeholder="Contoh: Bahasa Indonesia & PPKn Kesetaraan" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+        <select id="form-gr-mapel-select" onchange="grMapelAdd(this)" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20"></select>
+        <div id="form-gr-mapel-chips" class="flex flex-wrap gap-1.5 mt-2"></div>
+        <p id="form-gr-mapel-hint" class="hidden mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Daftar mata pelajaran masih kosong.
+          <button type="button" onclick="goToMapelSettings()" class="font-bold underline">Tambah di Pengaturan</button>
+        </p>
       </div>
       <div>
         <label class="block text-xs font-semibold text-slate-700 mb-1">Nomor WhatsApp / HP</label>
         <input type="text" id="form-gr-hp" placeholder="08xxxxxxxxxx" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
       </div>
-      <div>
-        <label class="block text-xs font-semibold text-slate-700 mb-1">Password Login Tutor</label>
-        <input type="text" id="form-gr-pass" value="guru123" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Username Login</label>
+          <input type="text" id="form-gr-user" required autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="contoh: agustina" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Password Login</label>
+          <input type="text" id="form-gr-pass" value="guru123" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+        </div>
       </div>
+      <p class="text-[10px] text-slate-400 -mt-1.5">Username: huruf kecil, angka, titik, strip atau garis bawah (3-30 karakter). Tutor login memakai username ini (atau NIP) beserta password.</p>
       <div class="mt-5 pt-3 border-t border-slate-100 flex gap-2 justify-end">
         <button type="button" onclick="closeFormModal()" class="px-4 py-2 text-xs font-medium border border-slate-200 rounded-xl hover:bg-slate-50">Batal</button>
         <button type="submit" class="px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700">Simpan Guru</button>
@@ -2243,6 +2495,7 @@ function openModalAddGuru() {
     </form>
   `;
   openFormModal('Tambah Data Tutor Baru', content);
+  grMapelRender();
 }
 
 function openModalEditGuru(id) {
@@ -2255,7 +2508,9 @@ function openModalEditGuru(id) {
   document.getElementById('form-gr-id').value = g.id;
   document.getElementById('form-gr-nip').value = g.nip_guru || '-';
   document.getElementById('form-gr-nama').value = g.nama_lengkap;
-  document.getElementById('form-gr-mapel').value = g.mata_pelajaran;
+  grMapelSel = parseMapel(g.mata_pelajaran);
+  grMapelRender();
+  document.getElementById('form-gr-user').value = g.username || '';
   document.getElementById('form-gr-hp').value = g.no_hp || '';
   document.getElementById('form-gr-pass').value = g.password || 'guru123';
 }
@@ -2266,14 +2521,25 @@ function saveGuru(e) {
   const id = document.getElementById('form-gr-id').value;
   const nip = document.getElementById('form-gr-nip').value.trim() || '-';
   const nama = document.getElementById('form-gr-nama').value.trim();
-  const mapel = document.getElementById('form-gr-mapel').value.trim();
+  const mapel = joinMapel(grMapelSel);
   const hp = document.getElementById('form-gr-hp').value.trim();
   const pass = document.getElementById('form-gr-pass').value.trim();
+  const username = document.getElementById('form-gr-user').value.trim().toLowerCase();
+
+  if (!grMapelSel.length) { showToast('Pilih minimal satu mata pelajaran dari daftar.', 'warning'); return; }
+  if (!/^[a-z0-9._-]{3,30}$/.test(username)) {
+    showToast('Username 3-30 karakter: huruf kecil, angka, titik, strip, atau garis bawah (tanpa spasi).', 'warning');
+    return;
+  }
+  if (username === 'admin' || db.guru.some(g => g.id !== id && (g.username || '').toLowerCase() === username)) {
+    showToast('Username sudah dipakai. Gunakan username lain.', 'warning');
+    return;
+  }
 
   if (id) {
     const idx = db.guru.findIndex(g => g.id === id);
     if (idx !== -1) {
-      db.guru[idx] = { ...db.guru[idx], nip_guru: nip, nama_lengkap: nama, mata_pelajaran: mapel, no_hp: hp, password: pass };
+      db.guru[idx] = { ...db.guru[idx], nip_guru: nip, nama_lengkap: nama, mata_pelajaran: mapel, no_hp: hp, username, password: pass };
     }
   } else {
     db.guru.push({
@@ -2282,6 +2548,7 @@ function saveGuru(e) {
       nama_lengkap: nama,
       mata_pelajaran: mapel,
       no_hp: hp,
+      username,
       password: pass
     });
   }
@@ -2373,7 +2640,7 @@ function renderJadwalModulView() {
 
 function openModalAddJadwal() {
   const db = getDb();
-  const tutorOptions = db.guru.map(g => `<option value="${g.nama_lengkap}">${g.nama_lengkap} (${g.mata_pelajaran})</option>`).join('');
+  const tutorOptions = db.guru.map(g => `<option value="${g.nama_lengkap}">${g.nama_lengkap} (${formatMapel(g.mata_pelajaran)})</option>`).join('');
 
   const content = `
     <form onsubmit="saveJadwal(event)" class="space-y-3.5">
@@ -2381,7 +2648,7 @@ function openModalAddJadwal() {
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-semibold text-slate-700 mb-1">Program Paket</label>
-          <select id="form-jm-paket" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+          <select id="form-jm-paket" onchange="refreshJadwalMapelOptions()" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
             <option value="Paket A">Paket A (Setara SD)</option>
             <option value="Paket B">Paket B (Setara SMP)</option>
             <option value="Paket C">Paket C (Setara SMA)</option>
@@ -2389,7 +2656,7 @@ function openModalAddJadwal() {
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-700 mb-1">Mata Pelajaran</label>
-          <input type="text" id="form-jm-mapel" required placeholder="Contoh: Bahasa Indonesia" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
+          <select id="form-jm-mapel" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200"></select>
         </div>
       </div>
       <div>
@@ -2417,6 +2684,7 @@ function openModalAddJadwal() {
     </form>
   `;
   openFormModal('Tambah Jadwal & Modul', content);
+  refreshJadwalMapelOptions();
 }
 
 function openModalEditJadwal(id) {
@@ -2428,7 +2696,7 @@ function openModalEditJadwal(id) {
   document.getElementById('modal-title').innerHTML = `<span>Edit Jadwal / Modul</span>`;
   document.getElementById('form-jm-id').value = j.id;
   document.getElementById('form-jm-paket').value = j.paket;
-  document.getElementById('form-jm-mapel').value = j.mata_pelajaran;
+  refreshJadwalMapelOptions(j.mata_pelajaran);
   document.getElementById('form-jm-tutor').value = j.tutor_nama;
   document.getElementById('form-jm-waktu').value = j.hari_waktu;
   document.getElementById('form-jm-link').value = j.link_modul || '';
@@ -2765,7 +3033,8 @@ const MAPEL_BY_PAKET = {
 function renderPenilaianView() {
   const db = getDb();
   const students = db.warga_belajar.filter(w => w.paket === selectedNilaiPaket);
-  const mapelOptions = MAPEL_BY_PAKET[selectedNilaiPaket] || ['Bahasa Indonesia', 'Matematika'];
+  let mapelOptions = mapelForPaket(selectedNilaiPaket);
+  if (!mapelOptions.length) mapelOptions = (MAPEL_BY_PAKET[selectedNilaiPaket] || ['Bahasa Indonesia']).slice();
 
   if (!mapelOptions.includes(selectedNilaiMapel)) {
     selectedNilaiMapel = mapelOptions[0];
@@ -4841,7 +5110,9 @@ const OUTBOX_KEY = 'pkbm_outbox_v1';
 
 const SYNC_TABLES = [
   { key: 'guru', table: 'tutor_guru', secret: ['password'],
-    cols: ['id', 'nip_guru', 'nama_lengkap', 'mata_pelajaran', 'no_hp', 'password'] },
+    cols: ['id', 'nip_guru', 'nama_lengkap', 'mata_pelajaran', 'no_hp', 'username', 'password'] },
+  { key: 'mata_pelajaran', table: 'mata_pelajaran',
+    cols: ['id', 'nama', 'paket'] },
   { key: 'warga_belajar', table: 'warga_belajar', secret: ['password'],
     cols: ['id', 'nisn', 'nama_lengkap', 'paket', 'tingkat', 'jenis_kelamin', 'no_hp', 'alamat', 'nik', 'nama_ayah', 'nama_ibu',
            'no_kk', 'jumlah_saudara', 'nik_ayah', 'nik_ibu', 'desa_kelurahan', 'kecamatan', 'kabupaten', 'provinsi', 'status', 'password'] },
@@ -5400,6 +5671,9 @@ create table if not exists public.penilaian (
 create table if not exists public.administrasi_kas (
   id text primary key
 );
+create table if not exists public.mata_pelajaran (
+  id text primary key
+);
 create table if not exists public.raport (
   id text primary key
 );
@@ -5413,7 +5687,16 @@ alter table public.tutor_guru
   add column if not exists nama_lengkap text,
   add column if not exists mata_pelajaran text,
   add column if not exists no_hp text,
+  add column if not exists username text,
   add column if not exists password text,
+  add column if not exists created_at timestamptz default now();
+
+create unique index if not exists tutor_guru_username_uq
+  on public.tutor_guru (lower(username)) where username is not null and username <> '';
+
+alter table public.mata_pelajaran
+  add column if not exists nama text,
+  add column if not exists paket text,
   add column if not exists created_at timestamptz default now();
 
 alter table public.warga_belajar
@@ -5507,6 +5790,7 @@ alter table public.penilaian        enable row level security;
 alter table public.administrasi_kas enable row level security;
 alter table public.raport           enable row level security;
 alter table public.app_settings     enable row level security;
+alter table public.mata_pelajaran   enable row level security;
 
 -- Bersihkan kebijakan lama (termasuk 2 kebijakan bawaan yang pernah dibuat)
 do $$
@@ -5517,7 +5801,7 @@ begin
     from pg_policies
     where schemaname = 'public'
       and tablename in ('tutor_guru','warga_belajar','jadwal_modul','presensi',
-                        'penilaian','administrasi_kas','raport','app_settings')
+                        'penilaian','administrasi_kas','raport','app_settings','mata_pelajaran')
   loop
     execute format('drop policy if exists %I on %I.%I', r.policyname, r.schemaname, r.tablename);
   end loop;
@@ -5528,7 +5812,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['tutor_guru','warga_belajar','jadwal_modul','presensi',
-                           'penilaian','administrasi_kas','raport','app_settings']
+                           'penilaian','administrasi_kas','raport','app_settings','mata_pelajaran']
   loop
     execute format('create policy %I on public.%I for all to authenticated using (true) with check (true)',
                    'admin_all_' || t, t);
@@ -5540,7 +5824,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['tutor_guru','warga_belajar','jadwal_modul','presensi',
-                           'penilaian','raport','app_settings']
+                           'penilaian','raport','app_settings','mata_pelajaran']
   loop
     execute format('create policy %I on public.%I for select to anon using (true)',
                    'anon_read_' || t, t);
@@ -5588,7 +5872,8 @@ as $$
     and g.password is not null
     and g.password = p_password
     and (
-      lower(coalesce(g.nip_guru, '')) = lower(p_identifier)
+      lower(coalesce(g.username, '')) = lower(p_identifier)
+      or lower(coalesce(g.nip_guru, '')) = lower(p_identifier)
       or g.id = p_identifier
       or lower(coalesce(g.nama_lengkap, '')) like '%' || lower(p_identifier) || '%'
     )
@@ -5677,6 +5962,7 @@ function renderPengaturanView() {
   return `
     <div class="space-y-6 max-w-3xl">
       ${renderSyncCard()}
+      ${renderMapelCard()}
       <div class="glass-card rounded-2xl p-5 md:p-6 border border-slate-200 space-y-5">
         <div class="flex items-start justify-between gap-3">
           <div class="flex items-center gap-3">
