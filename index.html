@@ -2098,6 +2098,13 @@ function saveWargaBelajar(e) {
   const id = document.getElementById('form-wb-id').value;
   const nisn = document.getElementById('form-wb-nisn').value.trim();
   const nama = document.getElementById('form-wb-nama').value.trim();
+  if (nisn && nisn !== '-') {
+    const dup = db.warga_belajar.find(w => w.id !== id && String(w.nisn || '').trim().toLowerCase() === nisn.toLowerCase());
+    if (dup) {
+      showToast('NISN ' + nisn + ' sudah dipakai oleh ' + dup.nama_lengkap + '. Gunakan NISN lain, atau isi "-" jika belum punya NISN.', 'error');
+      return;
+    }
+  }
   const paket = document.getElementById('form-wb-paket').value;
   const tingkat = document.getElementById('form-wb-tingkat').value.trim();
   const gender = document.getElementById('form-wb-gender').value;
@@ -5211,6 +5218,7 @@ function classifyError(err) {
   if (code === 'PGRST202' || code === 'PGRST204' || code === 'PGRST205' || code === '42703' || code === '42P01' ||
       /schema cache|does not exist|could not find/i.test(msg)) return 'schema';
   if (/failed to fetch|networkerror|network request failed|load failed|fetch failed/i.test(msg) || status === 0) return 'network';
+  if (code === '23505' || /duplicate key|unique constraint/i.test(msg)) return 'conflict';
   return 'other';
 }
 
@@ -5278,6 +5286,7 @@ async function flushOutbox() {
   updateSyncChip();
   let revert = false;
   let deniedTables = new Set();
+  let conflictMsgs = [];
   try {
     if (pendingCount() > 0 && !(await adminSessionOk())) return;
     outer:
@@ -5316,6 +5325,13 @@ async function flushOutbox() {
             removeFromOutbox(chunk);
             revert = true;
             deniedTables.add(table);
+          } else if (kind === 'conflict') {
+            // Data kembar (mis. NISN/username sudah dipakai): batalkan perubahan ini agar antrean tidak macet
+            removeFromOutbox(chunk);
+            revert = true;
+            const cm = String((res.error && res.error.message) || '');
+            const what = /nisn/i.test(cm) ? 'NISN' : /username/i.test(cm) ? 'Username' : /nip/i.test(cm) ? 'NIP' : 'Data';
+            conflictMsgs.push(what + ' sudah dipakai data lain di Supabase, perubahan dibatalkan. Gunakan ' + (what === 'Data' ? 'data yang berbeda' : what + ' yang berbeda') + '.');
           } else if (kind === 'network') {
             cloudHealth.offline = true;
             break outer;
@@ -5336,7 +5352,8 @@ async function flushOutbox() {
   }
 
   if (revert) {
-    showToast('Perubahan ditolak server: akun ini tidak punya izin mengubah ' + Array.from(deniedTables).join(', ') + '. Data dikembalikan.', 'warning');
+    if (conflictMsgs.length) showToast(conflictMsgs[0], 'error');
+    if (deniedTables.size) showToast('Perubahan ditolak server: akun ini tidak punya izin mengubah ' + Array.from(deniedTables).join(', ') + '. Data dikembalikan.', 'warning');
     await syncFromCloud();
     if (!isUiBusy()) routeTo(currentTab);
   }
@@ -5694,6 +5711,11 @@ alter table public.tutor_guru
 create unique index if not exists tutor_guru_username_uq
   on public.tutor_guru (lower(username)) where username is not null and username <> '';
 
+-- NISN: nilai kosong atau "-" (belum punya NISN) boleh berulang; NISN asli tetap harus unik.
+alter table public.warga_belajar drop constraint if exists warga_belajar_nisn_key;
+drop index if exists public.warga_belajar_nisn_key;
+alter table public.tutor_guru drop constraint if exists tutor_guru_nip_guru_key;
+
 alter table public.mata_pelajaran
   add column if not exists nama text,
   add column if not exists paket text,
@@ -5721,6 +5743,9 @@ alter table public.warga_belajar
   add column if not exists status text,
   add column if not exists password text,
   add column if not exists created_at timestamptz default now();
+
+create unique index if not exists warga_belajar_nisn_uq
+  on public.warga_belajar (nisn) where nisn is not null and nisn not in ('', '-');
 
 alter table public.jadwal_modul
   add column if not exists paket text,
