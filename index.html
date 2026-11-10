@@ -1777,6 +1777,15 @@ function renderDashboardView() {
 
 // 2. WARGA BELAJAR VIEW
 let selectedPaketFilter = 'Semua';
+let wbSort = 'asli'; // 'asli' | 'az' | 'za'
+function sortWbList(list) {
+  if (wbSort === 'asli') return list;
+  const dir = wbSort === 'za' ? -1 : 1;
+  return list.slice().sort((a, b) =>
+    dir * String(a.nama_lengkap || '').trim().localeCompare(String(b.nama_lengkap || '').trim(), 'id', { sensitivity: 'base', numeric: true }));
+}
+function setWbSort(mode) { wbSort = mode; routeTo('warga_belajar'); }
+function cycleWbSort() { setWbSort(wbSort === 'asli' ? 'az' : wbSort === 'az' ? 'za' : 'asli'); }
 
 function filterWargaBelajarByPaket(paket) {
   selectedPaketFilter = paket;
@@ -1795,6 +1804,13 @@ function toggleAllWbDetail() {
   const allOpen = list.length > 0 && list.every(w => expandedWb.has(w.id));
   list.forEach(w => { if (allOpen) expandedWb.delete(w.id); else expandedWb.add(w.id); });
   routeTo('warga_belajar');
+}
+
+function formatTglIndo(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').trim());
+  if (!m) return String(iso || '').trim();
+  const bln = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  return parseInt(m[3], 10) + ' ' + (bln[parseInt(m[2], 10) - 1] || m[2]) + ' ' + m[1];
 }
 
 function renderWbDetailPanel(wb) {
@@ -1829,6 +1845,7 @@ function renderWbDetailPanel(wb) {
         row('NIK', mono(wb.nik)) +
         row('Nama Lengkap', val(wb.nama_lengkap)) +
         row('Jenis Kelamin', val(gender)) +
+        row('Tempat, Tgl. Lahir', val([wb.tempat_lahir, wb.tanggal_lahir ? formatTglIndo(wb.tanggal_lahir) : ''].filter(Boolean).join(', '))) +
         row('Program Paket', val(wb.paket)) +
         row('Tingkat / Fase', val(wb.tingkat)) +
         row('No. WhatsApp / HP', val(wb.no_hp)) +
@@ -1855,6 +1872,7 @@ function renderWargaBelajarView() {
   if (selectedPaketFilter !== 'Semua') {
     list = list.filter(w => w.paket === selectedPaketFilter);
   }
+  list = sortWbList(list);
 
   return `
     <div class="space-y-5">
@@ -1867,11 +1885,21 @@ function renderWargaBelajarView() {
           `).join('')}
         </div>
 
+        <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+        <label class="flex items-center gap-2 text-xs font-semibold text-slate-600">
+          <i data-lucide="arrow-down-a-z" class="w-4 h-4 text-slate-400"></i>
+          <select onchange="setWbSort(this.value)" class="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700">
+            <option value="asli" ${wbSort === 'asli' ? 'selected' : ''}>Urutan Input</option>
+            <option value="az" ${wbSort === 'az' ? 'selected' : ''}>Nama A → Z</option>
+            <option value="za" ${wbSort === 'za' ? 'selected' : ''}>Nama Z → A</option>
+          </select>
+        </label>
         ${currentUser.role === 'admin' ? `
           <button onclick="openModalAddWargaBelajar()" class="px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-xl text-xs hover:bg-blue-700 transition shadow-md shadow-blue-500/20 flex items-center justify-center gap-2">
             <i data-lucide="user-plus" class="w-4 h-4"></i> Tambah Warga Belajar
           </button>
         ` : ''}
+        </div>
       </div>
 
       <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
@@ -1885,7 +1913,11 @@ function renderWargaBelajarView() {
                   </button>
                 </th>
                 <th class="p-3.5">NISN / ID</th>
-                <th class="p-3.5">Nama Peserta</th>
+                <th class="p-3.5">
+                  <button onclick="cycleWbSort()" title="Klik untuk mengurutkan A-Z / Z-A" class="uppercase tracking-wider font-semibold inline-flex items-center gap-1.5 hover:text-blue-600 transition">
+                    Nama Peserta <span class="text-[11px] ${wbSort === 'asli' ? 'text-slate-300' : 'text-blue-600'}">${wbSort === 'az' ? '▲ A-Z' : wbSort === 'za' ? '▼ Z-A' : '↕'}</span>
+                  </button>
+                </th>
                 <th class="p-3.5">Program Paket</th>
                 <th class="p-3.5">Tingkat / Fase</th>
                 <th class="p-3.5">No. HP</th>
@@ -1992,6 +2024,16 @@ function openModalAddWargaBelajar() {
           <input type="text" id="form-wb-hp" placeholder="08xxxxxxxxxx" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200">
         </div>
       </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Tempat Lahir</label>
+          <input type="text" id="form-wb-tempat" placeholder="Contoh: Teluk Batang" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Tanggal Lahir</label>
+          <input type="date" id="form-wb-tgl-lahir" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
+        </div>
+      </div>
       <div>
         <label class="block text-xs font-semibold text-slate-700 mb-1">NIK Peserta</label>
         <input type="text" id="form-wb-nik" inputmode="numeric" maxlength="16" placeholder="16 digit NIK" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20">
@@ -2079,6 +2121,8 @@ function openModalEditWargaBelajar(id) {
   document.getElementById('form-wb-hp').value = wb.no_hp || '';
   document.getElementById('form-wb-alamat').value = wb.alamat || '';
   document.getElementById('form-wb-nik').value = wb.nik || '';
+  document.getElementById('form-wb-tempat').value = wb.tempat_lahir || '';
+  document.getElementById('form-wb-tgl-lahir').value = wb.tanggal_lahir || '';
   document.getElementById('form-wb-ayah').value = wb.nama_ayah || '';
   document.getElementById('form-wb-ibu').value = wb.nama_ibu || '';
   document.getElementById('form-wb-kk').value = wb.no_kk || '';
@@ -2115,6 +2159,7 @@ function saveWargaBelajar(e) {
   const namaIbu = document.getElementById('form-wb-ibu').value.trim();
   const v = (i) => document.getElementById('form-wb-' + i).value.trim();
   const ortu = {
+    tempat_lahir: v('tempat'), tanggal_lahir: v('tgl-lahir'),
     no_kk: v('kk'), jumlah_saudara: v('saudara'), nik_ayah: v('nik-ayah'), nik_ibu: v('nik-ibu'),
     desa_kelurahan: v('desa'), kecamatan: v('kecamatan'), kabupaten: v('kabupaten'), provinsi: v('provinsi')
   };
@@ -5122,7 +5167,7 @@ const SYNC_TABLES = [
     cols: ['id', 'nama', 'paket'] },
   { key: 'warga_belajar', table: 'warga_belajar', secret: ['password'],
     cols: ['id', 'nisn', 'nama_lengkap', 'paket', 'tingkat', 'jenis_kelamin', 'no_hp', 'alamat', 'nik', 'nama_ayah', 'nama_ibu',
-           'no_kk', 'jumlah_saudara', 'nik_ayah', 'nik_ibu', 'desa_kelurahan', 'kecamatan', 'kabupaten', 'provinsi', 'status', 'password'] },
+           'tempat_lahir', 'tanggal_lahir', 'no_kk', 'jumlah_saudara', 'nik_ayah', 'nik_ibu', 'desa_kelurahan', 'kecamatan', 'kabupaten', 'provinsi', 'status', 'password'] },
   { key: 'jadwal_modul', table: 'jadwal_modul',
     cols: ['id', 'paket', 'mata_pelajaran', 'tutor_nama', 'hari_waktu', 'link_modul', 'keterangan'] },
   { key: 'presensi', table: 'presensi',
@@ -5732,6 +5777,8 @@ alter table public.warga_belajar
   add column if not exists nik text,
   add column if not exists nama_ayah text,
   add column if not exists nama_ibu text,
+  add column if not exists tempat_lahir text,
+  add column if not exists tanggal_lahir text,
   add column if not exists no_kk text,
   add column if not exists jumlah_saudara text,
   add column if not exists nik_ayah text,
